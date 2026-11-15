@@ -1,0 +1,55 @@
+/* §4.8.1–2 descriptor-to-context profile, base SS (no ETC/LEC extensions). */
+const ContextDMA=typeof module!=='undefined'?require('./dma-address.js'):DMAAddress;
+const ContextCommand=typeof module!=='undefined'?require('./command.js'):CommandLab;
+class EndpointContextLab{
+ constructor(){this.reset();}
+ reset(){this.profile('HS bulk IN');this.commands=null;this.message='Choose descriptor profile, build a zero-initialized Input Endpoint Context, then publish Configure.';}
+ static dci(number,direction,type){if(!Number.isInteger(number)||number<0||number>15||!['IN','OUT'].includes(direction)||!['Control','Bulk','Interrupt','Isoch'].includes(type)||number===0&&type!=='Control')throw Error('Endpoint number/type/direction invalid.');return type==='Control'?number*2+1:number*2+(direction==='IN'?1:0);}
+ profile(name='HS bulk IN'){
+  const profiles={'HS bulk IN':{speed:'High',type:'Bulk',number:1,direction:'IN',wMaxPacketSize:512},'HS bulk OUT NAK10':{speed:'High',type:'Bulk',number:1,direction:'OUT',wMaxPacketSize:512,bInterval:10},'HS control NAK255':{speed:'High',type:'Control',number:2,direction:'OUT',wMaxPacketSize:64,bInterval:255},'Control EP2 OUT':{speed:'Full',type:'Control',number:2,direction:'OUT',wMaxPacketSize:64},'LS interrupt10ms':{speed:'Low',type:'Interrupt',number:1,direction:'IN',wMaxPacketSize:8,bInterval:10},'FS interrupt10ms':{speed:'Full',type:'Interrupt',number:3,direction:'IN',wMaxPacketSize:64,bInterval:10},'HS isoch3 packets':{speed:'High',type:'Isoch',number:2,direction:'OUT',wMaxPacketSize:0x1400,bInterval:3},'SS bulk Streams':{speed:'Super',type:'Bulk',number:1,direction:'IN',wMaxPacketSize:1024,maxPStreams:1,descriptorMaxStreams:2,lsa:true,hid:true},'SS isoch burst':{speed:'Super',type:'Isoch',number:2,direction:'IN',wMaxPacketSize:1024,bInterval:2,bMaxBurst:3,mult:2,bytesPerInterval:10000},'SS EP0 exponent9':{speed:'Super',type:'Control',number:0,direction:'OUT',bMaxPacketSize0:9,wMaxPacketSize:512}};
+  if(!profiles[name])return this.message='Unknown descriptor profile.';
+  this.input={bInterval:0,bMaxBurst:0,mult:0,maxPStreams:0,descriptorMaxStreams:0,lsa:false,hid:false,dequeue:'0x9000',reserved:0,...profiles[name]};this.context=null;return this.message='Selected '+name+'; previous command context remains unchanged.';
+ }
+ static build(i){
+  const fail=message=>{throw Error(message);},dci=EndpointContextLab.dci(i.number,i.direction,i.type),ss=['Super','SuperPlus'].includes(i.speed),periodic=['Interrupt','Isoch'].includes(i.type);
+  if(!['Low','Full','High','Super','SuperPlus'].includes(i.speed))fail('Unknown device speed.');
+  if(i.reserved!==0)fail('Reserved Input Context fields must be zero.');
+  if(!ContextDMA.aligned(i.dequeue)||!ContextDMA.parse(i.dequeue))fail('Nonzero exact64-bit,16-byte aligned dequeue required.');
+  if(i.number===0&&ss&&!Number.isInteger(i.bMaxPacketSize0))fail('USB3 EP0 requires encoded bMaxPacketSize0.');
+  const raw=i.number===0?(ss?2**i.bMaxPacketSize0:i.bMaxPacketSize0??i.wMaxPacketSize):i.wMaxPacketSize;
+  if(!Number.isInteger(raw)||raw<1||raw>0x1fff)fail('Invalid Max Packet Size descriptor bits.');
+  const packet=raw&0x7ff,extra=i.number===0?0:(raw>>>11)&3;
+  if(extra&&!(i.speed==='High'&&periodic)||extra===3)fail('Additional transaction bits valid only for HS periodic endpoints, value0..2.');
+  if(i.speed==='Low'&&['Bulk','Isoch'].includes(i.type))fail('Low-Speed supports Control/Interrupt, not Bulk/Isoch.');
+  const sizes={Low:{Control:[8],Interrupt:8},Full:{Control:[8,16,32,64],Bulk:[8,16,32,64],Interrupt:64,Isoch:1023},High:{Control:[64],Bulk:[512],Interrupt:1024,Isoch:1024},Super:{Control:[512],Bulk:[1024],Interrupt:1024,Isoch:1024}}[ss?'Super':i.speed][i.type];
+  if(Array.isArray(sizes)?!sizes.includes(packet):!Number.isInteger(packet)||packet<1||packet>sizes)fail('Max Packet Size incompatible with speed/type.');
+  if(!Number.isInteger(i.bMaxBurst)||i.bMaxBurst<0||i.bMaxBurst>15||!ss&&i.bMaxBurst!==0||ss&&i.type==='Control'&&i.bMaxBurst!==0)fail('MaxBurst outside base SS profile; USB2/control descriptor burst must0.');
+  if(!Number.isInteger(i.mult)||i.mult<0||i.mult>2||i.mult&&!(ss&&i.type==='Isoch'))fail('Mult0 except SS Isoch Mult0..2.');
+  let interval=0;const hsNak=i.speed==='High'&&['Control','Bulk'].includes(i.type);
+  // Linux xhci_parse_microframe_interval: bInterval is a linear uframe hint,
+  // converted to the nearest lower power-of-two exponent; descriptor0 stays0.
+  // This is separate from the periodic bInterval-1 encoding.
+  if(hsNak){if(!Number.isInteger(i.bInterval)||i.bInterval<0||i.bInterval>255)fail('HS NAK bInterval must be0..255 microframes.');interval=i.bInterval?Math.floor(Math.log2(i.bInterval)):0;}
+  if(periodic){if(!Number.isInteger(i.bInterval)||i.bInterval<1||i.bInterval>(!ss&&i.speed!=='High'&&i.type==='Interrupt'?255:16))fail('Invalid periodic bInterval.');interval=!ss&&i.speed!=='High'?(i.type==='Interrupt'?Math.floor(Math.log2(8*i.bInterval)):i.bInterval+2):i.bInterval-1;}
+  if(!Number.isInteger(i.maxPStreams)||i.maxPStreams<0||i.maxPStreams>15||!i.lsa&&i.maxPStreams>7||i.maxPStreams&&(!ss||i.type!=='Bulk'||!Number.isInteger(i.descriptorMaxStreams)||i.maxPStreams>i.descriptorMaxStreams))fail('Streams require SS Bulk, supported MaxStreams and valid array geometry.');
+  const maxBurst=ss?i.bMaxBurst:i.speed==='High'&&periodic?extra:0,maxPayload=periodic?(ss?i.bytesPerInterval:packet*(maxBurst+1)):0;
+  if(periodic&&(!Number.isInteger(maxPayload)||maxPayload<1||maxPayload>packet*(maxBurst+1)*(i.mult+1)||maxPayload>49152))fail('Max ESIT Payload exceeds descriptor service budget or base-profile48KiB.');
+  const epType=i.type==='Control'?4:({Isoch:1,Bulk:2,Interrupt:3}[i.type]+(i.direction==='IN'?4:0)),pointer=BigInt(ContextDMA.parse(i.dequeue)),streams=i.maxPStreams>0;
+  const c={dci,epState:0,epType,maxPacketSize:packet,maxBurstSize:maxBurst,mult:ss?i.mult:0,interval,cErr:i.type==='Isoch'?0:3,maxPStreams:i.maxPStreams,lsa:streams&&Boolean(i.lsa),hid:streams&&Boolean(i.hid),dequeue:ContextDMA.parse(i.dequeue),dcs:streams?0:1,maxESITPayload:maxPayload,averageTRBLength:i.type==='Control'?8:packet};
+  c.intervalUse=periodic?'Periodic ESIT':hsNak?'HS NAK rate hint (Linux exponent translation)':'Unused';if(hsNak){c.nakDescriptorMicroframes=i.bInterval;c.nakRoundedMicroframes=i.bInterval?2**interval:0;}
+  c.words=Array(8).fill(0);c.words[0]=((c.mult<<8)|(c.maxPStreams<<10)|(Number(c.lsa)<<15)|(interval<<16))>>>0;c.words[1]=((c.cErr<<1)|(epType<<3)|(Number(c.hid)<<7)|(maxBurst<<8)|(packet<<16))>>>0;c.words[2]=(Number(pointer&0xfffffff0n)|c.dcs)>>>0;c.words[3]=Number(pointer>>32n);c.words[4]=((maxPayload<<16)|c.averageTRBLength)>>>0;return c;
+ }
+ build(){try{this.context=EndpointContextLab.build(this.input);return this.message='Built Input Context DCI='+this.context.dci+' EPtype='+this.context.epType+'; EPState0/reserved0. No hardware state changed.';}catch(error){this.context=null;return this.message='Software descriptor preflight: '+error.message;}}
+ initialize(){if(!this.context)return this.message='Build a valid context first.';if(this.commands)return this.message='Already initialized; replay before changing device speed.';this.commands=new ContextCommand();this.commands.supportsSSP=true;this.commands.ring();for(const [type,input]of [['Enable Slot',{}],['Address Device',{add:3,drop:0,dcbaa:true,ep0:true,speed:this.input.speed}]]){this.commands.publish(type,1,input);this.commands.execute();this.commands.collect();}return this.message='Slot1 Addressed at '+this.commands.contexts.get(1).speed+'; EP0 Running.';}
+ publish(){if(!this.commands||!this.context)return this.message='Build context and initialize device first.';if(this.context.dci===1)return this.message='EP0 uses Address/Evaluate Context; Configure ignores DCI1.';if(this.commands.contexts.get(1).speed!==this.input.speed)return this.message='Software preflight: descriptor and addressed device speed differ; replay.';if(this.context.maxPStreams>1)return this.message='This shared FIFO profile uses four primary entries; larger arrays use Streams laboratory.';const bit=2**this.context.dci;this.commands.publish('Configure Endpoint',1,{add:(bit|1)>>>0,drop:0,contextValid:true,linearStreams:this.context.maxPStreams>0,endpointContexts:{[this.context.dci]:this.context}});return this.message=this.commands.message;}
+ complete(){if(!this.commands)return this.message='Initialize first.';this.commands.execute();return this.message=this.commands.message;}
+ collect(){if(!this.commands)return this.message='Initialize first.';this.commands.collect();return this.message=this.commands.message;}
+ view(){return {input:this.input,context:this.context,output:this.commands?[...this.commands.endpointData.get(1)||[]]:null,events:this.commands?.events};}
+}
+if(typeof module!=='undefined')module.exports=EndpointContextLab;
+if(typeof document!=='undefined'){
+ const l=new EndpointContextLab(),p=document.createElement('details'),out=document.createElement('p');p.innerHTML='<summary>§4.8 Endpoint descriptor and context builder</summary><p>Control endpoints use odd DCI even for an OUT descriptor. Reserved Input Context words/EPState start0. Builder derives EPtype/MPS/CErr/Interval/burst/Mult/ESIT and exact64-bit dequeue. HS Bulk/Control NAK bInterval0..255 is a linear microframe descriptor hint, converted with the Linux xhci_parse_microframe_interval floor-log2 policy (0 stays0); it is not a periodic bInterval-1 ESIT. The displayed rounded hint is translation evidence, not a promise of async polling cadence. FS interrupt interval rounds down; HS additional transaction bits are decoded; SS EP0 exponent and bulk Streams distinguish ring versus array/DCS. Base SS profile, no ETC/LEC. Software descriptor preflight is separate from grouped xHC context validity; Configure publication snapshots fields, completion copies Output Context with EPState Running. Full DMA allocation/descriptor fetching remains in other laboratories.</p>';
+ const render=()=>out.textContent=l.message+' '+ContextDMA.stringify(l.view());
+ for(const name of ['HS bulk IN','HS bulk OUT NAK10','HS control NAK255','Control EP2 OUT','FS interrupt10ms','HS isoch3 packets','SS bulk Streams','SS isoch burst','SS EP0 exponent9']){const b=document.createElement('button');b.textContent='Descriptor '+name;b.onclick=()=>{l.profile(name);render();};p.append(b);}
+ for(const [name,fn]of [['Set context reserved1',()=>{l.input.reserved=1;l.context=null;l.message='Input reserved field changed.';}],['Clear context reserved',()=>{l.input.reserved=0;l.context=null;l.message='Reserved fields zero.';}],['Build endpoint context',()=>l.build()],['Initialize context device',()=>l.initialize()],['Publish built Configure',()=>l.publish()],['Complete built Configure',()=>l.complete()],['Collect built command completion',()=>l.collect()],['Replay context builder',()=>l.reset()]]){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{fn();render();};p.append(b);}out.setAttribute('aria-live','polite');p.append(out);document.body.append(p);render();
+}

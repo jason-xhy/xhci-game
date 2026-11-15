@@ -1,0 +1,7 @@
+const assert=require('node:assert/strict'),Lab=require('../root-port');
+const ready=hardware=>{const l=new Lab;l.attach();l.requestReset();l.completeReset();for(const b of [...l.changes])l.clear(b);l.events=[];l.hlc=true;l.configureUSB2LPM();if(hardware)l.enableUSB2LPM();l.requestUSB2LPM(hardware);l.respondUSB2LPM();return l;};
+for(const hardware of [false,true]){const l=ready(hardware);assert.equal(l.pls,'U2');l.exitUSB2LPM();assert.equal(l.pls,'U0');assert.equal(l.changes.has('PLC'),!hardware);assert.equal(l.events.length,hardware?0:1);}
+let l=ready(true);l.enableUSB2LPM(false);assert.equal(l.hle,false);assert.equal(l.pls,'U0');assert.equal(l.changes.has('PLC'),true);
+l=ready(false);l.u3e=true;l.exitUSB2LPM('U3');assert.equal(l.pls,'U0');assert.equal(l.entryPending,'U3');assert.equal(l.changes.has('PLC'),true);l.collect();l.clear('PLC');l.requestUSB2LPM();assert.equal(l.lpmPending,false);l.completeUSB2U3();assert.equal(l.pls,'U3');assert.equal(l.changes.has('PLC'),true);assert.equal(l.events.length,1);
+l=ready(true);l.exitUSB2LPM('U3');assert.equal(l.changes.has('PLC'),false);l.completeUSB2U3();assert.equal(l.pls,'U3');assert.equal(l.changes.has('PLC'),false);
+l=ready(false);l.exitUSB2LPM('U3');l.requestReset();assert.equal(l.entryPending,null);l.completeUSB2U3();assert.equal(l.pr,true);assert.notEqual(l.pls,'U3');console.log('PASS software L1 exit PLC versus HLE1 suppression, disable-HLE exit, distinct U2Exit/U3Entry/U3E and reset cancellation');

@@ -1,0 +1,18 @@
+const assert=require('node:assert/strict'),S=require('../scheduling');
+const iso=(direction='IN',length=3072,flags={})=>{const s=new S;s.useDescriptor('HS isoch3 packets',{direction});assert.equal(s.contextSource.output.epState,1);assert.equal(s.contextSource.configureCompletion.code,'Success');s.publish(length,flags);s.ring();return s;};
+let s=iso('OUT',2304);s.tick(4);assert.deepEqual(s.isochTrace.map(p=>[p.pid,p.length,p.microframe]),[['MDATA',1024,4],['MDATA',1024,4],['DATA0',256,4]]);assert.equal(s.events[0].endpoint,4);
+s=iso();s.tick(4);assert.deepEqual(s.isochTrace.map(p=>p.pid),['DATA2','DATA1','DATA0']);assert.equal(s.movedBytes,3072);
+s=iso();s.isochResponse();s.tick(4);assert.equal(s.events[0].code,'Short Packet');assert.equal(s.events[0].length,2944);
+s=iso('IN',1024,{ioc:false,isp:false});s.isochResponse('DATA2',1024);s.tick(4);assert.equal(s.events[0].code,'Isoch Buffer Overrun');assert.equal(s.events[0].length,0);
+for(const [responses,code,actual] of [[[['DATA2',512]],'USB Transaction Error',0],[[['DATA2',1024],['DATA0',1024]],'USB Transaction Error',1024],[[['DATA2',1025]],'Babble Detected Error',0],[[['DATA2',1024],['TIMEOUT',0]],'USB Transaction Error',1024],[[['DATA2',1024],['END_MICROFRAME',0]],'Missed Service Error',1024]]){s=iso();for(const r of responses)s.isochResponse(...r);s.publish(3072);s.tick(4);assert.equal(s.events[0].code,code);assert.equal(s.movedBytes,actual);assert.equal(s.transfer.ep.state,'Running');s.tick(4);assert.equal(s.events[1].code,'Success');assert.equal(s.movedBytes,actual+3072);}
+s=iso('OUT',0);s.tick(4);assert.deepEqual(s.isochTrace.map(p=>[p.pid,p.length]),[['DATA0',0]]);
+for(const [profile,mps]of [['FS interrupt10ms',64],['LS interrupt10ms',8]]){s=new S;s.useDescriptor(profile);assert.equal(s.esit,64);assert.equal(s.transfer.maxPacketSize,mps);s.publish(mps*2);s.ring();s.interruptResponse('NAK');s.tick(64);assert.equal(s.movedBytes,0);s.tick(64);assert.equal(s.transfer.td.moved,mps);assert.equal(s.events.length,0);s.tick(64);assert.equal(s.events[0].code,'Success');assert.equal(s.events[0].endpoint,s.contextSource.output.dci);assert.deepEqual(s.ppTrace,[]);}
+s=new S;s.useDescriptor('HS isoch3 packets',{dequeue:'0x20000000000000'});s.publish(2304);s.ring();s.tick(4);assert.equal(s.events[0].pointer,0x20000000000000n);assert.equal(s.pointer,0x20000000000010n);
+s=new S;s.useDescriptor('HS isoch3 packets',{dequeue:'0xfffffffffffffff0'});s.publish(16);assert.equal(s.queue.length,0);assert.match(s.message,/overflow/);
+s=new S;s.publish(64);const before=s.queue;s.useDescriptor('HS isoch3 packets',{wMaxPacketSize:0xffff});assert.equal(s.queue,before);assert.equal(s.contextSource,null);
+console.log('PASS descriptor-backed LS/FS Interrupt and HS Isoch packet ordering/errors, Configure identity, exact dequeue and preflight');
+
+s=iso('OUT',2304);s.transfer.bme=false;s.tick(4);assert.equal(s.queue.length,1);assert.equal(s.movedBytes,0);s.transfer.bme=true;s.tick(4);assert.equal(s.movedBytes,2304);
+
+for(const direction of ['IN','OUT']){s=new S;s.useDescriptor('HS isoch3 packets',{direction,dequeue:'0x20000000000000'});s.ring();s.tick(4);assert.equal(s.events[0].pointer,0x20000000000000n);assert.equal(s.events[0].endpoint,direction==='IN'?5:4);assert.equal(s.pointer,0x20000000000000n);assert.equal(s.movedBytes,0);assert.equal(s.scheduled,false);s.publish(3072);s.ring();s.tick(4);assert.equal(s.events[1].code,'Success');}
+s=new S;s.useDescriptor('LS interrupt10ms');s.publish(64);s.ring();s.interruptResponse('SHORT');s.tick(64);assert.equal(s.movedBytes,7);assert.equal(s.events[0].code,'Short Packet');

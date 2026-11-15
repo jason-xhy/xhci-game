@@ -1,0 +1,8 @@
+const assert=require('node:assert/strict'),Transfer=require('../transfer');
+for(const direction of ['IN','OUT'])for(const ioc of [false,true]){
+ const l=new Transfer;l.direction=direction;l.publish(0,ioc);const ptr=l.td.pointer;l.packetHints();assert.equal(JSON.parse(l.message).packetCount,1);l.ring();l.execute();assert.equal(l.ep.state,'Running');assert.equal(l.edtla,0);assert.deepEqual(l.transactions.map(t=>t.kind),ioc?['TRBRead','EventWrite']:['TRBRead']);assert.equal(l.events.length,Number(ioc));if(ioc)assert.deepEqual([l.events[0].code,l.events[0].pointer,l.events[0].residual],['Success',ptr,0]);
+}
+let l=new Transfer;l.publishChain([{type:'Normal',length:0,chain:true},{type:'Event Data',data:0x20aa,ioc:true,chain:false}]);l.packetHints();assert.equal(JSON.parse(l.message).packetCount,1);l.ring();l.execute();assert.deepEqual([l.events[0].code,l.events[0].ed,l.events[0].transferred],['Success',1,0]);assert.equal(l.events[0].pointer,0x20aan);assert.equal(l.transactions.some(t=>['INWrite','OUTRead'].includes(t.kind)),false);
+for(const entry of [{type:'No-Op',ioc:true,chain:false},{type:'Event Data',data:2,ioc:true,chain:false}]){l=new Transfer;l.publishChain([entry]);l.packetHints();assert.equal(JSON.parse(l.message).packetCount,0);l.ring();l.execute();assert.equal(l.transactions.some(t=>['INWrite','OUTRead'].includes(t.kind)),false);}
+l=new Transfer;const next=l.next;l.publishChain([{type:'Normal',length:0,chain:true},{type:'Normal',length:0,chain:false}]);assert.equal(l.td,null);assert.equal(l.next,next);assert.match(l.message,/exactly one Transfer/);
+console.log('PASS explicit ZLP Normal versus metadata-only TD, single Transfer preflight, IOC0/1 success and no payload DMA for IN/OUT');

@@ -1,0 +1,29 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert');const code=fs.readFileSync('game.js','utf8');const els=new Map();const el=id=>{if(!els.has(id))els.set(id,{textContent:'',style:{},onclick:null,children:new Map(),querySelector(selector){if(!this.children.has(selector))this.children.set(selector,{textContent:''});return this.children.get(selector)}});return els.get(id)};const mesh=()=>({position:{set(){}},geometry:{dispose(){}},material:{dispose(){},map:{dispose(){}}}});const context={$:el,THREE:{Vector3:class{set(){}}},parcels:[],scene:{remove(){}},box:mesh,sign:mesh,mat:()=>({}),stations:[],solid:[],document:{exitPointerLock(){}},renderer:{domElement:{}},console,assert};vm.createContext(context);const missions=code.slice(code.indexOf('const missions='),code.indexOf('let step=0'));const logic=code.slice(code.indexOf('let step=0'),code.indexOf("document.addEventListener('keydown'"));vm.runInContext('const startup={ready:true,reset(){}};function showStartup(){};'+missions+logic+`
+paused=false;near={id:'port',name:'port'};interact();if(step!==1)throw Error('reset');
+for(const index of [1,4,6,9,11]){
+ step=index;near={id:submissions[index].ring,name:'dispatch'};interact();if(!job||step!==index+1)throw Error('submission');
+ near={id:'event',name:'events'};interact();if(step!==index+1)throw Error('premature collection');
+ paused=false;if(index===6){tickJob(.1);if(job.phase!=='stalled'||ringData.transfer.dequeue!==0)throw Error('missing stall');const before=ringData.event.enqueue;tickJob(20);if(ringData.event.enqueue!==before)throw Error('premature event');repairCycle();}for(let i=0;i<120;i++)tickJob(.1);if(job.phase!=='ready')throw Error('completion');
+ interact();if(job!==null||step!==index+2||parcels.length)throw Error('consumption');
+}
+if(ringData.cmd.enqueue!==3||ringData.cmd.dequeue!==3||ringData.transfer.enqueue!==5||ringData.transfer.dequeue!==5||ringData.event.enqueue!==5||ringData.event.dequeue!==5)throw Error('counters');
+if(ringData.transfer.enq!==1||ringData.transfer.pcs!==0||ringData.transfer.ccs!==0||ringData.event.enq!==1)throw Error('wrap');
+console.log('PASS: 5 submissions, 8 source TRBs, 5 correlated completions; early event consumption rejected; meshes cleared after collection.');`,context);
+
+vm.runInContext(`
+const check=(v,m)=>{if(!v)throw Error(m)};
+reset();check(step===0&&job===null&&serial===0&&inspectRing==='cmd'&&inspectIndex===0,'reset state');
+for(const r of Object.values(ringData)){check(r.entries.every(t=>t===null)&&r.pcs===1&&r.ccs===1&&r.enqueue===0&&r.dequeue===0,'reset rings');
+ for(let round=0;round<3;round++){for(let i=0;i<3;i++)pushTRB(r,'test',round*3+i);const snap=JSON.stringify(r);assert.throws(()=>pushTRB(r,'overflow',99),/Ring full/);check(JSON.stringify(r)===snap,'overflow mutated ring');for(let i=0;i<3;i++)check(popTRB(r).id===round*3+i,'FIFO');check(popTRB(r)===null,'empty duplicate');}check(r.enq===1&&r.deq===1&&r.pcs===1&&r.ccs===1,'multiwrap');}
+reset();const ownership=pushTRB(ringData.cmd,'owned',1);ownership.cycle=0;const mismatch=JSON.stringify(ringData.cmd);check(popTRB(ringData.cmd)===null&&JSON.stringify(ringData.cmd)===mismatch,'ownership mismatch moved pointer');
+reset();paused=false;step=1;submit(submissions[1]);setPause(true);const submitted=JSON.stringify(ringData);tickJob(50);check(job.time===0&&JSON.stringify(ringData)===submitted,'pause submitted');reset();check(!job&&!parcels.length,'reset outstanding');
+paused=false;step=6;submit(submissions[6]);tickJob(.1);check(job.phase==='stalled','fault');check($('task').textContent==='Repair the descriptor Cycle mismatch','stalled objective');route=[[1,1]];navigate();check(route.length===0&&inspectIndex===0&&$('message').textContent.includes('Press F'),'stalled navigation');near={id:'event'};interact();check(job.phase==='stalled'&&$('message').textContent.includes('No completion:'),'stalled collection guidance');
+inspectIndex=1;repairCycle();check(job.phase==='stalled','wrong repair');inspectIndex=0;
+setPause(true);const frozen=JSON.stringify(ringData);tickJob(50);repairCycle();check(JSON.stringify(ringData)===frozen&&job.phase==='stalled','paused stall changed');setPause(false);repairCycle();
+job.trbs[1].cycle^=1;tickJob(5);check(job.phase==='stalled'&&job.consumed===1&&ringData.transfer.dequeue===1&&ringData.event.enqueue===0&&inspectIndex===1,'later mismatch');repairCycle();tickJob(1);check(job.phase==='returning'&&ringData.event.enqueue===1,'later repair');
+setPause(true);const time=job.time;tickJob(50);check(job.time===time&&job.phase==='returning','pause returning');setPause(false);tickJob(5);tickJob(50);check(ringData.event.enqueue===1,'duplicate completion');near={id:'event'};interact();const count=ringData.event.dequeue;interact();check(ringData.event.dequeue===count,'double collection');
+reset();check(parcels.length===0&&history.length===0&&job===null,'restart cleanup');
+paused=false;for(let i=0;i<14;i++){near={id:missions[step][0]};interact();if(job){tickJob(.1);if(job.phase==='stalled')repairCycle();tickJob(10);tickJob(5);}}
+check(finished&&paused&&ringData.event.dequeue===5,'full mission');$('start').onclick();check(!finished&&!paused&&step===0&&serial===0&&ringData.event.dequeue===0,'new shift button');check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','restart overlay heading');setPause(true);check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','pause retained completion heading');
+console.log('PASS: reserved capacity, overflow atomicity, FIFO, multiwrap, empty ownership, later-entry mismatch/repair, pause, reset, full mission and restart.');
+`,context);
