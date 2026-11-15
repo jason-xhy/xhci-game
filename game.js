@@ -357,6 +357,40 @@ function stationDisplay(x, y, z, width = .82, height = .255) {
  return draw;
 }
 
+function buildContextDock(x,z) {
+ const center = x-.91;
+ foldedBox(center,1.151,z+.36,.68,.13,.56,.024,panelSeam);
+ for (const offset of [-.252,.252]) {
+  foldedBox(center+offset,1.228,z+.33,.080,.081,.47,.015,connectorMetal);
+  flangeBolt(center+offset,1.286,z+.564,.025);
+ }
+ foldedBox(center,1.22,z+.616,.62,.211,.070,.016,footRubber);
+ const readout = stationDisplay(center,1.22,z+.655,.57,.175);
+ readout.mesh.name = 'Context dock readout';
+ readout.mesh.visible = false;
+ const lamp = controlLens(center+.277,1.319,z+.626,.024,.020,
+  new THREE.MeshStandardMaterial({color:0xa89d74,emissive:0xa89d74,emissiveIntensity:0,roughness:.52}));
+ const makeCard = (name,parts) => {
+  const card = new THREE.Group();
+  card.name = name;
+  for (const [x,y,z,w,h,d,finish] of parts) {
+   card.add(foldedBox(x,y,z,w,h,d,.012,finish));
+  }
+  card.visible = false;
+  scene.add(card);
+  return card;
+ };
+ const addressCard = makeCard('Slot and EP0 context cartridge',[
+  [0,0,0,.385,.10,.27,enamel], [0,.07,-.022,.228,.062,.16,brass],
+  [0,.033,.15,.28,.027,.062,stripeMetal]
+ ]);
+ const endpointCard = makeCard('Endpoint context cartridge',[
+  [0,0,0,.381,.098,.269,enamel], [-.09,.07,-.015,.122,.064,.178,connectorMetal],
+  [.09,.07,-.015,.122,.064,.178,connectorMetal], [0,.033,.15,.27,.026,.061,stripeMetal]
+ ]);
+ return {x:center,z,readout,lamp,addressCard,endpointCard};
+}
+
 const displayStates = {
  queued:'WRITE DOORBELL',
  submitted:'XHC PROCESSING',
@@ -367,7 +401,7 @@ const displayStates = {
 
 function station(id,name,x,z,color){
  const finish = cabinetFinishes[id] ?? dark;
- let control,connectionLens;
+ let control,connectionLens,contextDock;
  foldedBox(x,.96,z,1.6,1.68,1.2,.045,finish);
  solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
@@ -375,7 +409,7 @@ function station(id,name,x,z,color){
  if(id==='ctx'){
   box(x,1.02,z,2.58,.13,1.4,steel);
   for(const dx of [-1.12,1.12])box(x+dx,.47,z,.12,1,.22,enamel);
-  box(x-.76,1.27,z+.16,.48,.34,.44,brass);
+  contextDock = buildContextDock(x,z);
  } else if(id==='port'){
   box(x-.94,.62,z,.26,1.24,.47,enamel);
   box(x-.94,1.33,z,.38,.16,.51,brass);
@@ -499,7 +533,7 @@ function station(id,name,x,z,color){
   }
  }
  stations.push({
-  id,name,x,z,light,screen,display,approach,control,connectionLens,receiptDisplay,
+  id,name,x,z,light,screen,display,approach,control,connectionLens,contextDock,receiptDisplay,
   ringReceipt:receiptDisplay?.mesh
  });
 }
@@ -521,6 +555,7 @@ let lastDeparture;
 let lastSignalStep;
 let lastCycleDiagnosticKey;
 let lastRootPortPhase;
+let lastContextDockKey;
 const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
@@ -562,6 +597,28 @@ function showRingReceipt(station,eventStatus,diagnosis) {
  }
 }
 
+function updateContextDock(dock,status) {
+ if (!dock) return;
+ const showCard = status && status.phase!=='evidence';
+ dock.addressCard.visible = Boolean(showCard && status.kind==='address');
+ dock.endpointCard.visible = Boolean(showCard && status.kind==='endpoint');
+ dock.readout.mesh.visible = Boolean(status);
+ dock.lamp.material.emissiveIntensity = status ? .50 : 0;
+ if (!status) return;
+ const {color,label,depth} = {
+  evidence:{color:0xb9c5b0,label:'INPUT EVIDENCE',depth:.39},
+  saved:{color:0xeac17d,label:'DRAFT SAVED',depth:.38},
+  applied:{color:0x8ad9e0,label:'INPUT APPLIED',depth:.20},
+  rejected:{color:0xff9177,label:'PARAMETER ERROR',depth:.49}
+ }[status.phase];
+ dock.lamp.material.color.setHex(color);
+ dock.lamp.material.emissive.setHex(color);
+ const card = status.kind==='address' ? dock.addressCard : dock.endpointCard;
+ card.position.set(dock.x,1.293,dock.z+depth);
+ card.rotation.x = status.phase==='rejected' ? -.12 : 0;
+ dock.readout(label,color,status.summary);
+}
+
 function showStationSignal(target) {
  const phase = job?.phase;
  const stationId = job ? missions[job.source][0] : target.id;
@@ -569,8 +626,12 @@ function showStationSignal(target) {
  const diagnosis = cycleDiagnosticStatus();
  const diagnosticKey = diagnosis ? Object.values(diagnosis).join('|') : '';
  const port = rootPortStatus();
+ const dockStatus = contextDockStatus();
+ const dockKey = dockStatus ? [dockStatus.kind,dockStatus.phase,dockStatus.summary].join('|') : '';
  if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture &&
-     step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey && port.phase === lastRootPortPhase) return;
+     step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey &&
+     port.phase === lastRootPortPhase && dockKey === lastContextDockKey) return;
+ lastContextDockKey = dockKey;
  lastRootPortPhase = port.phase;
  lastCycleDiagnosticKey = diagnosticKey;
  lastLitStation = stationId;
@@ -609,6 +670,7 @@ function showStationSignal(target) {
    }
   }
   showRingReceipt(station,eventStatus,diagnosis);
+  updateContextDock(station.contextDock,dockStatus);
   if (eventMode) {
    const label = {posted:'EVENT POSTED',ready:'IRQ READY',read:'DRIVER READ'}[eventStatus.phase];
    const action = {posted:'WAIT FOR IRQ',ready:'H READ EVENT · R RINGS',read:eventCode.toUpperCase()}[eventStatus.phase];
@@ -737,6 +799,25 @@ let configuredEndpoint = null;
 let configureObserved = false;
 let usbConfigurationObserved = false;
 let configureFailure = '';
+let rejectedAddressInput = null;
+let rejectedEndpointInput = null;
+
+function contextDockStatus() {
+ if (step<3 || !shiftSlotId) return null;
+ if (step<8) {
+  const payload = addressContext ?? rejectedAddressInput ?? contextDraft;
+  const phase = addressContext ? 'applied' : rejectedAddressInput ? 'rejected' : contextDraft ? 'saved' : 'evidence';
+  const summary = payload ? `SLOT ${payload.slot} · MPS ${payload.mps}` : `SLOT ${shiftSlotId} · EP0`;
+  return {kind:'address',phase,summary,payload};
+ }
+ if (!observedEndpointDescriptor) return null;
+ const payload = configureContext ?? rejectedEndpointInput ?? endpointDraft;
+ const phase = configureContext ? 'applied' : rejectedEndpointInput ? 'rejected' : endpointDraft ? 'saved' : 'evidence';
+ const add = payload && (payload.add ?? endpointAddMask(payload));
+ const summary = payload ? `DCI ${payload.dci} · ADD 0x${add.toString(16)}` : `DESCRIPTOR #${observedEndpointDescriptor.job}`;
+ return {kind:'endpoint',phase,summary,payload};
+}
+
 
 function defaultAddressContext() {
  return {
@@ -800,6 +881,7 @@ function openShiftContextWorkbench(feedback = '') {
   $('context-feedback').textContent = issue;
   if (issue) return;
   contextDraft = draft;
+  rejectedAddressInput = null;
   panel.close();
   message('已保存上下文草稿。在工位按 E 应用，然后提交 Address Device。');
  };
@@ -887,6 +969,7 @@ function openEndpointWorkbench(feedback = '') {
   $('endpoint-feedback').textContent = issue;
   if (issue) return;
   endpointDraft = draft;
+  rejectedEndpointInput = null;
   panel.close();
   message('已保存端点草稿。在工位按 E 应用，然后提交 Configure Endpoint。');
  };
@@ -1192,9 +1275,11 @@ function handleCompletion(){
   step = source - 1;
   if (source === 4) {
    addressContext = null;
+   rejectedAddressInput = completion.inputContext;
    addressFailure = `Address Device: ${completion.completionCode}。检查 A0/A1 与 ${shiftRootPort.speed} Speed EP0 MPS，然后重新提交。`;
   } else if (source === 9) {
    configureContext = null;
+   rejectedEndpointInput = completion.inputContext;
    configureFailure = `Configure Endpoint: ${completion.completionCode}。需要 A0 与所选端点的 Add 位，A1 保持清零。`;
   }
   const feedback = source===4 ? addressFailure : configureFailure;
@@ -1342,6 +1427,7 @@ $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
 function reset(){
+ rejectedAddressInput = rejectedEndpointInput = null;
  rootPortResetElapsed = 0;
  skipRootPortFrame = false;
  cycleDiagnosticFeedback = '';
