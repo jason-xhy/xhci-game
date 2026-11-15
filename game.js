@@ -486,9 +486,12 @@ function showStationSignal(target) {
   } else if (selected) {
    const command = submissions[step]?.name;
    const action = {port:'E  RESET USB2',ctx:'E  PREPARE CONTEXT',exit:'E  CLOCK OUT'}[stationId];
-   const title = step===3 ? (addressFailure ? 'C  REPAIR CONTEXT' : 'C  EDIT CONTEXT') : 'OPERATE HERE';
+   let title = 'OPERATE HERE';
+   if (step===3) title = addressFailure ? 'C  REPAIR CONTEXT' : 'C  EDIT CONTEXT';
+   if (step===8) title = configureFailure ? 'C  REPAIR ENDPOINT' : 'C  DESCRIPTOR / EP';
+   const contextAction = step===8 ? 'E  BUILD EP CONTEXT' : action;
    station.display(command?.toUpperCase() ?? title,color,
-    command ? 'E  QUEUE TRB' : action);
+    command ? 'E  QUEUE TRB' : contextAction);
   } else if (station.id === departure) {
    station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0,station.id === 'port' ? 'USB2 PORT READY' : '');
   } else if (station.id === 'port' && step > 0) {
@@ -508,6 +511,16 @@ let contextDraft = null;
 let addressContext = null;
 let successfulCompletions = 0;
 let addressFailure = '';
+const shiftEndpointBytes = Object.freeze([7,5,0x81,2,0,2,0]);
+const shiftEndpointRing = '0x9000';
+let endpointDescriptorBuffer = null;
+let observedEndpointDescriptor = null;
+let endpointDraft = null;
+let configureContext = null;
+let configuredEndpoint = null;
+let configureObserved = false;
+let usbConfigurationObserved = false;
+let configureFailure = '';
 
 function defaultAddressContext() {
  return {
@@ -577,6 +590,93 @@ function openShiftContextWorkbench(feedback = '') {
  panel.showModal();
 }
 
+function defaultEndpointDraft() {
+ const d = observedEndpointDescriptor;
+ return {direction:d.direction,dci:EndpointContextLab.dci(d.number,d.direction,d.type),addSlot:true};
+}
+
+function endpointPreflight(draft) {
+ const d = observedEndpointDescriptor;
+ if (draft.direction !== d.direction) {
+  return `方向与 bEndpointAddress 0x${d.address.toString(16)} 的 bit 7 不一致。未提交命令。`;
+ }
+ const actualDci = EndpointContextLab.dci(d.number,d.direction,d.type);
+ if (draft.dci !== actualDci) {
+  return `DCI 与已观察的 EP${d.number} ${d.direction} 不一致。未提交命令。`;
+ }
+ return '';
+}
+
+function endpointAddMask(draft) {
+ return (2**draft.dci | Number(draft.addSlot)) >>> 0;
+}
+
+function applyEndpointContext() {
+ if (!observedEndpointDescriptor) {
+  message('读取当前 GET_DESCRIPTOR 的成功 Transfer Event 后才能应用端点上下文。');
+  return;
+ }
+ const draft = endpointDraft ?? defaultEndpointDraft();
+ const issue = endpointPreflight(draft);
+ if (issue) {
+  message(issue);
+  openEndpointWorkbench(issue);
+  return;
+ }
+ const endpoint = EndpointContextLab.build({
+  ...observedEndpointDescriptor,dequeue:shiftEndpointRing,reserved:0,
+  bMaxBurst:0,mult:0,maxPStreams:0,descriptorMaxStreams:0,lsa:false,hid:false
+ });
+ Object.freeze(endpoint.words);
+ configureContext = Object.freeze({
+  slot:shiftSlotId,descriptorJob:observedEndpointDescriptor.job,
+  dci:endpoint.dci,add:endpointAddMask(draft),drop:0,
+  endpoint:Object.freeze(endpoint)
+ });
+ const summary = `从已观察的描述符 #${configureContext.descriptorJob} 构造 DCI ${endpoint.dci} · Add 0x${configureContext.add.toString(16)} · DCS=${endpoint.dcs}。`;
+ log(summary);
+ message(summary);
+ advance();
+}
+
+function openEndpointWorkbench(feedback = '') {
+ if (paused || finished || step !== 8 || near?.id !== 'ctx' || !observedEndpointDescriptor || job) return;
+ const panel = $('endpoint-workbench');
+ if (panel.open) return;
+ document.exitPointerLock?.();
+ keys = {};
+ route = [];
+ const d = observedEndpointDescriptor;
+ const saved = endpointDraft ?? defaultEndpointDraft();
+ const form = panel.querySelector('form');
+ const fields = form.elements;
+ $('endpoint-evidence').textContent = `GET_DESCRIPTOR #${d.job} · ${d.bytes.map(byte=>byte.toString(16).padStart(2,'0')).join(' ').toUpperCase()} · EP${d.number} ${d.direction} / ${d.type} / ${d.speed} Speed · MPS=${d.wMaxPacketSize & 0x7ff}。`;
+ const alternatives = ['OUT','IN'].map(direction=>EndpointContextLab.dci(d.number,direction,d.type));
+ fields.dci.replaceChildren(...[...new Set(alternatives)].map(dci=>new Option(`DCI ${dci}`,dci)));
+ fields.direction.value = saved.direction;
+ fields.dci.value = saved.dci;
+ fields.addSlot.checked = saved.addSlot;
+ $('endpoint-feedback').textContent = feedback || configureFailure;
+ const read = () => ({direction:fields.direction.value,dci:Number(fields.dci.value),addSlot:fields.addSlot.checked});
+ const preview = () => {
+  const draft = read();
+  $('endpoint-preview').textContent = `EP${d.number} ${draft.direction} → DCI ${draft.dci} · Add 0x${endpointAddMask(draft).toString(16)} · Transfer Ring ${shiftEndpointRing} · DCS=1。`;
+ };
+ form.onchange = preview;
+ preview();
+ form.onsubmit = event => {
+  event.preventDefault();
+  const draft = read();
+  const issue = endpointPreflight(draft);
+  $('endpoint-feedback').textContent = issue;
+  if (issue) return;
+  endpointDraft = draft;
+  panel.close();
+  message('已保存端点草稿。在工位按 E 应用，然后提交 Configure Endpoint。');
+ };
+ panel.showModal();
+}
+
 const startPosition = [-9, 1.7, -14];
 const position = new THREE.Vector3(...startPosition), history = [];
 const ringData={cmd:{cx:-17,cz:-9,dockX:-10.3,dockZ:-4.35,travelDirection:-1,color:0xe6ad58,enqueue:0,dequeue:0},transfer:{cx:17,cz:-9,dockX:10.3,dockZ:-4.35,travelDirection:1,color:0x67ccd3,enqueue:0,dequeue:0},event:{cx:0,cz:17,color:0x82c591,enqueue:0,dequeue:0}};
@@ -618,7 +718,7 @@ function log(entry) {
 function message(s){$('message').textContent=s}
 const missionArc=[0,1,1,2,3,3,4,4,5,5,5,5,5,5];
 const arcNames=['端口复位','启用 Slot','准备设备上下文','分配地址','读取描述符','配置设备'];
-function update(){const m=missions[step];$('mission-arc').textContent=`02 / 工位实操 · ${missionArc[step]+1}/6 ${arcNames[missionArc[step]]}`;$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${step>0?'ENABLED':'ATTACHED'}\nSLOT ${step>=11?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${step>=13?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
+function update(){const m=missions[step];$('mission-arc').textContent=`02 / 工位实操 · ${missionArc[step]+1}/6 ${arcNames[missionArc[step]]}`;$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${step>0?'ENABLED':'ATTACHED'}\nSLOT ${configuredEndpoint?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${usbConfigurationObserved?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
 function updateRings(){
  const phase = job?.phase;
  const status = $('controller-status');
@@ -751,9 +851,10 @@ function holdFaultParcel() {
 function submit(def){
  job={...def,id:++serial,phase:'queued',time:0,consumed:0,source:step};
  job.trbs=def.types.map(type=>pushTRB(ringData[def.ring],type,serial));
- if (def.name==='Address Device') {
-  job.trbs[0].inputContext=addressContext;
-  job.trbs[0].slot=job.trbs[0].inputContext.slot;
+ const input = step === 4 ? addressContext : step === 9 ? configureContext : null;
+ if (input) {
+  job.trbs[0].inputContext = input;
+  job.trbs[0].slot = input.slot;
  }
  if(step===6)job.trbs[0].cycle^=1;
  job.types.forEach((type,i)=>spawn(job.ring,`#${job.id} ${type}`,i));
@@ -784,24 +885,35 @@ function tickJob(dt){
    return;}
    if(job.time<2+job.consumed*.35)break;
    const consumed = popTRB(r);
-   if (consumed.inputContext) job.addressInput = consumed.inputContext;
+   if (consumed.inputContext) job.commandInput = consumed.inputContext;
    job.consumed++;
    updateRings();
   }
   if(job.consumed===job.trbs.length){
    clearParcels();
-   const input = job.addressInput;
-   const valid = !input || SlotContextDMALab.addressControlsValid(input.speed,input.add,input.mps);
+   const input = job.commandInput;
+   let valid = true;
+   if (job.source === 4) valid = !!input && SlotContextDMALab.addressControlsValid(input.speed,input.add,input.mps);
+   if (job.source === 9) {
+    const contextValid = input?.endpoint?.dci === input?.dci &&
+     Boolean((input?.add>>>input?.dci)&1);
+    valid = !!input && CommandLab.configureControlValid({...input,contextValid});
+    if (valid) configuredEndpoint = input;
+   }
    const result = pushTRB(ringData.event,job.event,job.id);
    result.completionCode = valid ? 'Success' : 'Parameter Error';
    if (job.ring === 'cmd') result.commandPointer = job.trbs[0].pointer;
    result.slot = job.trbs[0].slot;
    if (input) result.inputContext = input;
+   if (job.source === 6 && valid) {
+    endpointDescriptorBuffer = {job:job.id,bytes:shiftEndpointBytes};
+    result.descriptorBytes = endpointDescriptorBuffer.bytes;
+   }
    spawn('event',`#${job.id} ${job.event} · ${result.completionCode.toUpperCase()}`);
    job.phase='returning';
    job.time=0;
    log(`xHC consumed #${job.id}; produced ${job.event}.`);
-   updateRings();
+   update();
   }
  }else if(job.phase==='returning'){placeParcel(parcels[0],Math.min(.82,job.time/1.2*.82));if(job.time>=1.2){job.phase='ready';job.irqPending=true;playYardCue('event');log(`#${job.id} xHC raised IRQ after writing the Event Ring.`);message('IRQ received. Press H to step through the driver handler and advance ERDP.');updateRings();}}
 }
@@ -816,15 +928,33 @@ function handleCompletion(){
  route = [];
  if (completion.completionCode !== 'Success') {
   step = source - 1;
-  addressContext = null;
-  addressFailure = `Address Device: ${completion.completionCode}。检查 A0/A1 与 ${completion.inputContext.speed} Speed EP0 MPS，然后重新提交。`;
-  log(addressFailure);
-  message(addressFailure);
+  if (source === 4) {
+   addressContext = null;
+   addressFailure = `Address Device: ${completion.completionCode}。检查 A0/A1 与 ${shiftRootPort.speed} Speed EP0 MPS，然后重新提交。`;
+  } else if (source === 9) {
+   configureContext = null;
+   configureFailure = `Configure Endpoint: ${completion.completionCode}。需要 A0 与所选端点的 Add 位，A1 保持清零。`;
+  }
+  const feedback = source===4 ? addressFailure : configureFailure;
+  log(feedback);
+  message(feedback);
   update();
   return;
  }
  successfulCompletions++;
  if (source===1) shiftSlotId = completion.slot;
+ if (source===6) {
+  if (endpointDescriptorBuffer?.job!==completion.id || endpointDescriptorBuffer.bytes!==completion.descriptorBytes) {
+   throw Error('Descriptor completion correlation');
+  }
+  observedEndpointDescriptor = Object.freeze({
+   ...EndpointContextLab.decodeEndpoint(endpointDescriptorBuffer.bytes,shiftRootPort.speed),
+   job:completion.id,bytes:endpointDescriptorBuffer.bytes
+  });
+  endpointDescriptorBuffer = null;
+ }
+ if (source===9) configureObserved = completion.inputContext === configuredEndpoint;
+ if (source===11) usbConfigurationObserved = true;
  message(missions[step][4]);
  advance();
 }
@@ -836,9 +966,12 @@ function interact(){if(paused||!near||finished)return;if(!startup.ready){message
  shiftRootPort.completeReset();
 }
 if(step===3){applyAddressContext();return}
+if(step===8){applyEndpointContext();return}
 if(submissions[step]){
  if(step===4&&!addressContext){message('Prepare the Input Context before submitting Address Device.');return}
- if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;$('quick-start').hidden=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${successfulCompletions} completion events successfully. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';$('journey').hidden=false;document.dispatchEvent(new CustomEvent('shift:complete',{detail:{addressContext,addressFailure}}));return}advance()}
+ if(step===9&&!configureContext){message('Prepare the Endpoint Input Context before submitting Configure Endpoint.');return}
+ if(step===11&&!configureObserved){message('Read the successful Configure Endpoint completion before submitting SET_CONFIGURATION.');return}
+ if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;$('quick-start').hidden=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${successfulCompletions} completion events successfully. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';$('journey').hidden=false;document.dispatchEvent(new CustomEvent('shift:complete',{detail:{addressContext,addressFailure,observedEndpointDescriptor,configuredEndpoint,configureFailure}}));return}advance()}
 const blocked=(x,z)=>solid.some(o=>Math.abs(x-o.x)<o.w&&Math.abs(z-o.z)<o.d);
 function move(dx,dz){const count=Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.15);for(let i=0;i<count;i++){if(!blocked(position.x+dx/count,position.z))position.x+=dx/count;if(!blocked(position.x,position.z+dz/count))position.z+=dz/count}position.x=THREE.MathUtils.clamp(position.x,-30,30);position.z=THREE.MathUtils.clamp(position.z,-30,30)}
 function findStationRoute(start, target) {
@@ -894,7 +1027,12 @@ function updateNextAction(target) {
  if (panel.hidden) return;
  const atTarget = near?.id === target.id;
  const codeButton = $('code-workbench');
- $('context-workbench-button').hidden = step !== 3 || !atTarget || Boolean(route.length);
+ const contextButton = $('context-workbench-button');
+ contextButton.hidden = (step !== 3 && step !== 8) || !atTarget || Boolean(route.length);
+ if (!contextButton.hidden) {
+  const label = step === 8 ? '编辑端点上下文（C）' : '编辑上下文（C）';
+  if (contextButton.textContent !== label) contextButton.textContent = label;
+ }
  const lesson = typeof workbenchCases === 'undefined' ? null : workbenchCases[target.id];
  codeButton.hidden = job?.phase !== 'stalled' && (lesson?.step !== step || (!job?.irqPending && (!atTarget || Boolean(route.length))));
  if (!codeButton.hidden) {
@@ -943,7 +1081,15 @@ function updateNextAction(target) {
 $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
-function reset(){document.body?.classList.remove('yard-ring-review');$('journey').hidden=false;$('quick-start').hidden=false;document.dispatchEvent(new Event('shift:reset'));$('overlay').querySelector('h3').textContent='FIRST SHIFT';$('overlay').querySelector('p').textContent='让一台 USB2 设备从接入走到可用。跟随 Command、Transfer 和 Event 三条环完成第一次枚举。';$('start').textContent='手动启动控制器';startup.reset();startupFeedback='';step=0;serial=0;job=null;finished=false;inspectRing='cmd';inspectIndex=0;keys={};near=null;clearParcels();history.length=0;ringFields.clear();$('log').textContent='';for(const r of Object.values(ringData)){r.enqueue=r.dequeue=r.enq=r.deq=0;r.pcs=r.ccs=1;r.entries.fill(null)}position.set(...startPosition);yaw=pitch=0;route=[];message('New shift. Inspect the USB2 root port.');update()}
+function reset(){
+ shiftRootPort = shiftSlotId = contextDraft = addressContext = null;
+ endpointDescriptorBuffer = observedEndpointDescriptor = endpointDraft = configureContext = configuredEndpoint = null;
+ configureObserved = usbConfigurationObserved = false;
+ successfulCompletions = 0;
+ addressFailure = configureFailure = '';
+ $('context-workbench').close();
+ $('endpoint-workbench').close();
+ document.body?.classList.remove('yard-ring-review');$('journey').hidden=false;$('quick-start').hidden=false;document.dispatchEvent(new Event('shift:reset'));$('overlay').querySelector('h3').textContent='FIRST SHIFT';$('overlay').querySelector('p').textContent='让一台 USB2 设备从接入走到可用。跟随 Command、Transfer 和 Event 三条环完成第一次枚举。';$('start').textContent='手动启动控制器';startup.reset();startupFeedback='';step=0;serial=0;job=null;finished=false;inspectRing='cmd';inspectIndex=0;keys={};near=null;clearParcels();history.length=0;ringFields.clear();$('log').textContent='';for(const r of Object.values(ringData)){r.enqueue=r.dequeue=r.enq=r.deq=0;r.pcs=r.ccs=1;r.entries.fill(null)}position.set(...startPosition);yaw=pitch=0;route=[];message('New shift. Inspect the USB2 root port.');update()}
 function beginShift() {
  running = true;
  paused = false;
@@ -988,24 +1134,29 @@ function manual() {
  }
 }
 $('briefing-manual').onclick = manual;
-$('context-workbench-button').onclick = () => openShiftContextWorkbench();
+$('context-workbench-button').onclick = () => {
+ if (step === 8) openEndpointWorkbench();
+ else openShiftContextWorkbench();
+};
+$('close-endpoint-workbench').onclick = () => $('endpoint-workbench').close();
 $('close-context-workbench').onclick = () => $('context-workbench').close();
 $('closemanual').onclick = manual;
 document.addEventListener('keydown', event => {
  if (event.code !== 'KeyV' || event.repeat || !running || paused || !startup.ready) return;
- if ($('driver-workbench')?.open || $('context-workbench').open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
+ if ($('driver-workbench')?.open || $('context-workbench').open || $('endpoint-workbench').open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
  document.body.classList.toggle('yard-scene-only');
  document.body.classList.remove('yard-ring-review');
 });
 document.addEventListener('keydown', event => {
  if (event.code !== 'KeyR' || event.repeat || !running || paused || !startup.ready) return;
- if ($('driver-workbench')?.open || $('context-workbench').open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
+ if ($('driver-workbench')?.open || $('context-workbench').open || $('endpoint-workbench').open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
  if (!document.body.classList.contains('yard-scene-only')) return;
  const opening = document.body.classList.toggle('yard-ring-review');
  if (opening) document.exitPointerLock?.();
 });
-document.addEventListener('keydown',e=>{if($('commission') && e.code==='Enter' && !e.repeat && !e.target.matches?.('input, textarea, select, [contenteditable]')){e.preventDefault();$('commission').querySelector('.current-action:not(:disabled)')?.click();return}if($('commission') || $('driver-workbench')?.open || $('context-workbench').open || e.target.matches?.('input, textarea, select, [contenteditable]'))return;if(e.code==='Escape'&&!$('manual').hidden){manual();return;}if(paused&&e.code!=='Escape')return;if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&!paused)e.preventDefault();keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD'].includes(e.code))route=[];if(e.repeat)return;if(e.code==='KeyI'&&!paused)nextEntry();if(e.code==='KeyO'&&!paused)nextRing();if(e.code==='KeyF')repairCycle();if(e.code==='KeyC'&&!paused){
+document.addEventListener('keydown',e=>{if($('commission') && e.code==='Enter' && !e.repeat && !e.target.matches?.('input, textarea, select, [contenteditable]')){e.preventDefault();$('commission').querySelector('.current-action:not(:disabled)')?.click();return}if($('commission') || $('driver-workbench')?.open || $('context-workbench').open || $('endpoint-workbench').open || e.target.matches?.('input, textarea, select, [contenteditable]'))return;if(e.code==='Escape'&&!$('manual').hidden){manual();return;}if(paused&&e.code!=='Escape')return;if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&!paused)e.preventDefault();keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD'].includes(e.code))route=[];if(e.repeat)return;if(e.code==='KeyI'&&!paused)nextEntry();if(e.code==='KeyO'&&!paused)nextRing();if(e.code==='KeyF')repairCycle();if(e.code==='KeyC'&&!paused){
  if(step===3&&near?.id==='ctx')openShiftContextWorkbench();
+ else if(step===8&&near?.id==='ctx')openEndpointWorkbench();
  else if(!$('code-workbench').hidden)$('code-workbench').click();
 }if(e.code==='KeyB')ringDoorbell();if(e.code==='KeyH')handleCompletion();if(e.code==='KeyE')interact();if(e.code==='KeyG')navigate();if(e.code==='Tab')manual();if(e.code==='Escape'&&running&&!finished){if(!$('manual').hidden){$('manual').hidden=true;setPause(true)}else setPause(!paused)}});
 document.addEventListener('keyup',e=>keys[e.code]=false);window.addEventListener('blur',()=>{if(running&&!finished&&!$('driver-workbench')?.open)setPause(true)});let drag=false;renderer.domElement.onmousedown=()=>drag=true;window.onmouseup=()=>drag=false;window.addEventListener('mousemove',e=>{if(paused)return;if(document.pointerLockElement||drag){yaw-=e.movementX*.0025;pitch=Math.max(-1.2,Math.min(1.2,pitch-e.movementY*.0025))}});

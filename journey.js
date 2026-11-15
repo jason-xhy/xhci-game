@@ -134,6 +134,13 @@
   }
   root.replaceChildren(badge,heading,route,prompt,keys,controls,status);
   if (context) root.append(contextSummary);
+  const endpoint = event.detail?.configuredEndpoint;
+  const descriptor = event.detail?.observedEndpointDescriptor;
+  if (endpoint && descriptor) {
+   const retry = event.detail.configureFailure ? '修正 Configure Endpoint 后，' : '';
+   const bytes = descriptor.bytes.map(byte=>byte.toString(16).padStart(2,'0')).join(' ').toUpperCase();
+   root.append(element('p',`${retry}本次描述符 #${descriptor.job}（${bytes}）生成 DCI ${endpoint.dci}。驱动读到 Configure Endpoint 成功后，才向 USB 设备发送 SET_CONFIGURATION。`));
+  }
   show();
   focusFirst();
  }

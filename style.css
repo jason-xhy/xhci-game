@@ -201,7 +201,7 @@ body:has(#overlay:not([style*="display: none"])) #chapter-labs > button,
 
 #context-workbench-button {margin-top:8px}
 #context-workbench-button[hidden] {display:none}
-#context-workbench {
+:is(#context-workbench,#endpoint-workbench) {
  width:min(560px,calc(100vw - 32px));
  max-height:calc(100vh - 32px);
  padding:24px;
@@ -209,10 +209,18 @@ body:has(#overlay:not([style*="display: none"])) #chapter-labs > button,
  color:#e0efeb;
  border:1px solid #80a49d;
 }
-#context-workbench::backdrop {background:#081012b8}
-#context-workbench form {display:grid; gap:10px}
-#context-workbench h2, #context-workbench p {margin:0}
-#context-workbench label {display:flex; gap:12px; align-items:center}
-#context-workbench select {background:#182a2d; color:#e0efeb; padding:7px}
-#context-feedback {color:#ffcf89}
+:is(#context-workbench,#endpoint-workbench)::backdrop {background:#081012b8}
+:is(#context-workbench,#endpoint-workbench) form {display:grid; gap:10px}
+:is(#context-workbench,#endpoint-workbench) h2, :is(#context-workbench,#endpoint-workbench) p {margin:0}
+:is(#context-workbench,#endpoint-workbench) label {display:flex; gap:12px; align-items:center}
+:is(#context-workbench,#endpoint-workbench) select {background:#182a2d; color:#e0efeb; padding:7px}
+#context-feedback, #endpoint-feedback {color:#ffcf89}
 .context-actions {display:flex; gap:8px; flex-wrap:wrap}
+
+#endpoint-preview {
+ display:block;
+ padding:8px;
+ background:#102023;
+ color:#adedef;
+ font-family:monospace;
+}

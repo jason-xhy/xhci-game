@@ -11,6 +11,10 @@ function initializeAddressContext(lab,slot,i){const ctx=lab.contexts.get(slot);c
 /* §4.6.1–2 independent teaching snapshot: finite linear No Op queue. */
 class CommandLab {
  static completionCodes=Object.freeze({'Success':1,'USB Transaction Error':4,'TRB Error':5,'Resource Error':7,'Bandwidth Error':8,'No Slots Available':9,'Slot Not Enabled':11,'Parameter Error':17,'Context State Error':19,'Command Ring Stopped':24,'Command Aborted':25,'Stopped':26,'Stopped - Invalid Length':27,'Stopped - Short Packet':28,'Max Exit Latency Too Large':29,'Invalid Stream ID Error':34});
+ static configureControlValid(input) {
+  return Number.isInteger(input.add) && Number.isInteger(input.drop) &&
+   (input.add & 3) === 1 && (input.drop & 3) === 0 && Boolean(input.contextValid);
+ }
  static types=Object.freeze({'No Op':23,'Enable Slot':9,'Disable Slot':10,'Address Device':11,'Configure Endpoint':12,'Evaluate Context':13,'Reset Endpoint':14,'Stop Endpoint':15,'Set TR Dequeue Pointer':16,'Reset Device':17});
  constructor(){this.reset();}
  reset(){this.unobservedEnabledSlots=new Map();this.parseAllEventData=false;this.discardedTransferEvents=[];this.retiredEndpointWork=[];this.pendingEndpointScopes=new Set();this.initializationReservations=new Set();this.hubInitialized=new Set();this.supportsSSP=false;this.maxRootPorts=8;this.abortPending=false;this.abortElapsed=0;this.resetRequired=false;this.ringInitialized=true;this.unknownDevices=new Set();this.current=null;this.stopPending=false;this.endpointData=new Map();this.preparedStreamArrays=new Map();this.retiredStreamArrays=new Map();this.endpointStates=new Map();this.contexts=new Map();this.evaluated=new Map();this.endpoints=new Map();this.states=new Map();this.slots=new Set();this.maxSlots=2;this.queue=[];this.events=[];this.next=0x1000;this.running=false;this.idle=false;this.message='Publish No Op, ring doorbell 0, execute, then collect its correlated completion.';}
@@ -30,7 +34,7 @@ class CommandLab {
  else if(i.hubFields&&!this.hubInitialized.has(slot)&&(![0,1].includes(i.hubFields.hub)||![0,1].includes(i.hubFields.mtt)||!Number.isInteger(i.hubFields.ttt)||i.hubFields.ttt<0||i.hubFields.ttt>3||!Number.isInteger(i.hubFields.numPorts)||i.hubFields.numPorts<0||i.hubFields.numPorts>255))code='Parameter Error';
  else if(i.endpointContexts&&Array.from({length:30},(_,n)=>n+2).some(dci=>((i.add>>>dci)&1)&&(!i.endpointContexts[dci]||i.endpointContexts[dci].dci!==dci||i.endpointContexts[dci].epState!==0||!Array.isArray(i.endpointContexts[dci].words)||i.endpointContexts[dci].words.length!==8)))code='Parameter Error';
 
- else if(!Number.isInteger(i.add)||!Number.isInteger(i.drop)||(i.add&3)!==1||(i.drop&3)!==0||!i.contextValid)code='Parameter Error';
+ else if(!CommandLab.configureControlValid(i))code='Parameter Error';
  else {
  const retiredArray=i.streamArraySnapshot?this.endpointData.get(slot).get(i.resizeDCI||2)?.streamArray:null;const next=new Set(this.endpoints.get(slot)||[]);
  for(let dci=2;dci<=31;dci++)if((i.drop>>>dci)&1)next.delete(dci);

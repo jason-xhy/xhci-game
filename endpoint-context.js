@@ -10,6 +10,16 @@ class EndpointContextLab{
   if(!profiles[name])return this.message='Unknown descriptor profile.';
   this.input={bInterval:0,bMaxBurst:0,mult:0,maxPStreams:0,descriptorMaxStreams:0,lsa:false,hid:false,dequeue:'0x9000',reserved:0,...profiles[name]};this.context=null;return this.message='Selected '+name+'; previous command context remains unchanged.';
  }
+ static decodeEndpoint(bytes,speed){
+  if(bytes.length<7||bytes[0]<7||bytes[0]>bytes.length||bytes[1]!==5||(bytes[2]&0x70)) {
+   throw Error('Expected a complete USB Endpoint Descriptor.');
+  }
+  return {
+   address:bytes[2],number:bytes[2]&15,direction:bytes[2]&128?'IN':'OUT',speed,
+   type:['Control','Isoch','Bulk','Interrupt'][bytes[3]&3],
+   wMaxPacketSize:bytes[4]|bytes[5]<<8,bInterval:bytes[6]
+  };
+ }
  static build(i){
   const fail=message=>{throw Error(message);},dci=EndpointContextLab.dci(i.number,i.direction,i.type),ss=['Super','SuperPlus'].includes(i.speed),periodic=['Interrupt','Isoch'].includes(i.type);
   if(!['Low','Full','High','Super','SuperPlus'].includes(i.speed))fail('Unknown device speed.');
