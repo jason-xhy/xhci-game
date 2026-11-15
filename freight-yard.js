@@ -1,6 +1,7 @@
 'use strict';
 
 const yardHoists = [];
+const yardDetailedContainerSlots = [];
 const reducedYardMotion = matchMedia('(prefers-reduced-motion: reduce)');
 
 function updateFreightYard(time) {
@@ -133,23 +134,47 @@ function buildFreightYard() {
   return mesh;
  });
  const transform = new THREE.Matrix4();
- function container(x,z,y,style,label){
+ function container(x,z,y,style,label,detailed=false){
   const width=2.44, height=2.59, length=6.06;
-  box(x,y+height/2,z,width,height,length,shells[style],y===0);
-  const corrugation=ribsByColor[style];
-  for(const side of [-1,1])for(let i=0;i<24;i++){
+  // A candidate keeps its own low-detail geometry. It stays visible until
+  // the complete replacement is ready, and owns the original collision once.
+  const fallback = detailed ? new THREE.Group() : null;
+  if (fallback) {
+   fallback.name = 'Procedural container fallback';
+   scene.add(fallback);
+   yardDetailedContainerSlots.push({x,z,y,width,height,length,fallback});
+  }
+  const part = (...args) => {
+   const mesh = box(...args);
+   if (fallback) fallback.add(mesh);
+   return mesh;
+  };
+  part(x,y+height/2,z,width,height,length,shells[style],y===0);
+  const shared = ribsByColor[style];
+  const corrugation = fallback
+   ? new THREE.InstancedMesh(shared.geometry,shared.material,48)
+   : shared;
+  if (fallback) {
+   corrugation.count = 0;
+   fallback.add(corrugation);
+  }
+  for (const side of [-1,1]) for (let i=0;i<24;i++) {
    transform.makeTranslation(x+side*(width/2+.016),y+height/2,z-2.79+i*.242);
    corrugation.setMatrixAt(corrugation.count++,transform);
   }
-  for(const side of [-1,1]){
-   for(const railY of [.065,height-.065])box(x+side*1.24,y+railY,z,.08,.13,length+.04,joints);
-   box(x+side*.57,y+height/2,z+3.05,1.1,height-.28,.08,ribs[style]);
-   for(const dx of [-.22,.22])box(x+side*.57+dx,y+1.32,z+3.12,.038,2.25,.04,beam);
-   for(const end of [-1,1])box(x+side*1.21,y+1.3,z+end*3.03,.14,height+.03,.14,joints);
+  if (fallback) {
+   corrugation.instanceMatrix.needsUpdate = true;
+   corrugation.computeBoundingSphere();
   }
-  if(label){
-   const placard=sign(label,x,y+1.9,z+3.17,'#d5c7a6',1.64);
-   placard.rotation.y=0;
+  for (const side of [-1,1]) {
+   for (const railY of [.065,height-.065])part(x+side*1.24,y+railY,z,.08,.13,length+.04,joints);
+   part(x+side*.57,y+height/2,z+3.05,1.1,height-.28,.08,ribs[style]);
+   for (const dx of [-.22,.22])part(x+side*.57+dx,y+1.32,z+3.12,.038,2.25,.04,beam);
+   for (const end of [-1,1])part(x+side*1.21,y+1.3,z+end*3.03,.14,height+.03,.14,joints);
+  }
+  if (label) {
+   const placard = sign(label,x,y+1.9,z+3.17,'#d5c7a6',1.64);
+   placard.rotation.y = 0;
   }
  }
  for(const side of [-1,1])for(let i=0;i<8;i++){
@@ -157,7 +182,10 @@ function buildFreightYard() {
   container(x,z,0,(i+(side+1))%4,'');
   if(i%3!==1)container(x,z,2.65,(i+1)%4,'');
  }
- for(let i=0;i<6;i++)container(-18+i*7,-30,0,i%4,'');
+ for (let i=0;i<6;i++) {
+  // Door ends face the working aisles left of USB2 and behind the context bench.
+  container(-18+i*7,-30,0,i%4,'',i===1 || i===4);
+ }
  for(let i=0;i<4;i++)container(-16+i*10,-40,0,(i+1)%4,'');
 
  function gantry(x,z,span,height){
