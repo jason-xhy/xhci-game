@@ -89,7 +89,7 @@
   root.replaceChildren(badge,heading,route,diagram,status,controls);
   show();
  }
- function debrief() {
+ function debrief(event) {
   const {badge, heading, status, controls} = frame('03 / 全链路复盘', '换一个视角：下一步该由谁做？');
   const route = track(chapters.map((label,i) => [String(i + 1).padStart(2, '0'), label]));
   const prompt = element('p');
@@ -126,7 +126,14 @@
     controls.append(answer);
    });
   }
+  const context = event.detail?.addressContext;
+  const contextSummary = element('p');
+  if (context) {
+   const retry = event.detail.addressFailure ? '修正一次 Parameter Error 后，' : '';
+   contextSummary.textContent = `${retry}本次 Address Device 读取 DCBAA[${context.dcbaaSlot}] 对应的 Slot ${context.slot}，并使用 EP0 Control MPS=${context.mps}。`;
+  }
   root.replaceChildren(badge,heading,route,prompt,keys,controls,status);
+  if (context) root.append(contextSummary);
   show();
   focusFirst();
  }
