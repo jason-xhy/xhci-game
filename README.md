@@ -10,7 +10,7 @@ Reproduce model checks with `node tests/run-unit.js`. With Chrome installed and 
 
 A first-person WebGL factory lesson based on xHCI Rev 1.2b §4.3.1–5. Three.js is bundled locally; no build or network connection is needed after download. The previous CSS prototype is preserved in prototype-original.html.
 
-Controls: WASD move, mouse look (or hold mouse and drag), arrow keys look, Shift sprint, E operate nearby station, Tab field manual, Esc pause, G follows a collision-aware aisle route to the current objective. Each reload starts a fresh shift so no incomplete outstanding work is restored. Finish at the shift clock to start a new run.
+Controls: WASD move, mouse look (or hold mouse and drag), arrow keys look, Shift sprint, E operate nearby station, Tab field manual, Esc pause, G follows a collision-aware aisle route to the current objective. Press V during a shift to hide or restore the HUD. Floor arrows and turn signs show the active route while you walk. Each reload starts a fresh shift so no incomplete outstanding work is restored. Finish at the shift clock to start a new run.
 
 First Shift opens with a six-stage map and a step-by-step comparison of Enable Slot and GET_DESCRIPTOR. The factory HUD marks the current stage during hands-on work. Finishing the shift returns to the same map for a decision exercise on doorbells, IRQ handling and EP0.
 
@@ -49,7 +49,7 @@ Run `node tests/startup.cjs` for ordering and reset invariants. Commissioning an
 
 Browser regression: with Playwright installed, run `node tests/browser.js`. Set `PLAYWRIGHT_MODULE` to an absolute Playwright module path if needed; `CHROME_PATH` and `TEST_URL` optionally override the Chrome executable and local server URL. The test checks every laboratory entry, mutually exclusive navigation, command64-bit dequeue, control timeout, alternate-interface STALL recovery, narrow viewport and uncaught page errors. It does not prove complete Chapter4 coverage.
 
-Full factory browser acceptance: `node tests/first-shift-browser.js` uses the same Playwright/Chrome/server environment variables. It operates commissioning buttons and actual G/E/B/H/F keyboard controls through all fourteen mission interactions, checks five completion events and starts a new shift. This takes several minutes at normal movement speed.
+Full factory browser acceptance: `node tests/first-shift-browser.js` uses the same Playwright/Chrome/server environment variables. It operates commissioning buttons and actual G/E/B/H/F keyboard controls through all fourteen mission interactions, checks five completion events and starts a new shift. It also hides the HUD at the root port and restores it after navigating to the command station. This takes several minutes at normal movement speed.
 
 Stop/reset browser regression: `node tests/stop-recovery-browser.js` uses the same environment variables. It checks real EP0/data-endpoint Stop coordination before Interrupter Target changes, multi-TRB short-packet EDTLA, completed-TRB/TD/Event Data/Link restart profiles, and linked physical reset with visible before/after Output Context. These are fixed teaching profiles; remaining table cases stay on the coverage checklist.
 

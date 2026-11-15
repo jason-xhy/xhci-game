@@ -6,8 +6,18 @@ for(let stage=0;stage<14;stage++){
   await page.waitForFunction(()=>document.getElementById('rings').textContent.includes('IRQ pending'),{},{timeout:15000});
   await page.keyboard.press('KeyH');
  } else {
+  if(stage===1){
+   await page.keyboard.press('KeyV');
+   assert.equal(await page.locator('#hud').isVisible(),false);
+   await page.waitForFunction(()=>yardRouteMarkers?.some(marker=>marker.visible));
+  }
   await page.keyboard.press('KeyG');
   await page.waitForFunction(()=>document.getElementById('message').textContent.includes('At the station.'),{},{timeout:45000});
+  if(stage===1){
+   await page.keyboard.press('KeyV');
+   assert.equal(await page.locator('#hud').isVisible(),true);
+   console.log('PASS scene-only mode from root port to command station');
+  }
   await page.keyboard.press('KeyE');
   if([1,4,6,9,11].includes(stage)){
    assert.match(await page.locator('#rings').textContent(),/: queued/);

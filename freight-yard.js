@@ -8,6 +8,95 @@ function updateFreightYard(time) {
  for (const [index, hoist] of yardHoists.entries()) hoist.position.x = Math.sin(time * .23 + index) * 2.7;
 }
 
+function wetEdgeMask(seed) {
+ const canvas = document.createElement('canvas');
+ canvas.width = canvas.height = 96;
+ const context = canvas.getContext('2d');
+ const mask = context.createImageData(96,96);
+ for (let row = 0; row < 96; row++) {
+  for (let column = 0; column < 96; column++) {
+   const x = (column-48)/47;
+   const y = (row-48)/47;
+   const angle = Math.atan2(y,x);
+   const shore = .80+.10*Math.sin(3*angle+seed)+.066*Math.cos(7*angle-seed)+.036*Math.sin(12*angle+seed);
+   const feather = .098+.038*Math.cos(5*angle+seed);
+   const coverage = Math.min(1,Math.max(0,(shore-Math.hypot(x,y))/feather));
+   const offset = (row*96+column)*4;
+   const value = 255*coverage*coverage*(3-2*coverage);
+   mask.data.set([value,value,value,255],offset);
+  }
+ }
+ context.putImageData(mask,0,0);
+ return new THREE.CanvasTexture(canvas);
+}
+
+function buildYardWetAreas() {
+ // Some patches spread along slab joints, others occupy depressions beside the aisle.
+ const puddles = [
+  [-11.5,-18.4,2.0,.57,.10],[-7.25,-16.9,1.03,.68,-.28],[-5.2,-21,.58,2.04,.08],
+  [-13.2,-6.0,2.95,.55,-.05],[-6.5,-6.3,2.3,.65,.06],[-3.2,-13.5,1.72,.76,-.34],
+  [2.3,-18.5,2.14,.46,.10],[5.2,-12,.68,2.18,.08],[10.7,-9.7,.97,1.70,-.15],
+  [6.9,-4.8,1.3,.98,-.36],[-8.1,5.9,2.28,.70,-.02],[-4.8,3.0,.94,1.86,.12],
+  [2.3,6.0,2.57,.48,.13],[5.3,10.1,.66,2.22,.08],[-3.1,19.5,1.84,.72,.13],
+  [-13.8,17.6,2.1,.51,-.17],[13.6,15.7,1.68,1.40,.30],[9.0,23.7,2.60,.51,-.03]
+ ];
+ const geometry = new THREE.PlaneGeometry(2,2);
+ geometry.rotateX(-Math.PI/2);
+ const pose = new THREE.Object3D();
+ for (let variant = 0; variant < 3; variant++) {
+  const group = puddles.filter((_,index)=>index%3 === variant);
+  const water = new THREE.MeshStandardMaterial({
+   color:0x272e2c, alphaMap:wetEdgeMask(1+variant*2), transparent:true,
+   opacity:.71, depthWrite:false, roughness:.46, metalness:.025
+  });
+  const patches = new THREE.InstancedMesh(geometry,water,group.length);
+  patches.receiveShadow = true;
+  patches.renderOrder = 2;
+  for (const [index,[x,z,width,depth,yaw]] of group.entries()) {
+   pose.position.set(x,.008+variant*.00025,z);
+   pose.rotation.set(0,yaw,0);
+   pose.scale.set(width,1,depth);
+   pose.updateMatrix();
+   patches.setMatrixAt(index,pose.matrix);
+  }
+  patches.computeBoundingSphere();
+  scene.add(patches);
+ }
+}
+
+function buildYardWear() {
+ const canvas = document.createElement('canvas');
+ canvas.width = canvas.height = 1024;
+ const context = canvas.getContext('2d');
+ const pixel = coordinate => (coordinate+34)*1024/68;
+
+ function strip(center, reach, horizontal, tint, from=0, to=1024) {
+  const gradient = horizontal
+   ? context.createLinearGradient(0,center-reach,0,center+reach)
+   : context.createLinearGradient(center-reach,0,center+reach,0);
+  gradient.addColorStop(0,tint+'00');
+  gradient.addColorStop(.48,tint+'30');
+  gradient.addColorStop(1,tint+'00');
+  context.fillStyle = gradient;
+  if (horizontal)context.fillRect(from,center-reach,to-from,2*reach);
+  else context.fillRect(center-reach,from,2*reach,to-from);
+ }
+
+ for (let x=-30; x<=30; x+=5)strip(pixel(x),3.5,false,'#322b24');
+ for (let z=-30; z<=30; z+=6)strip(pixel(z),4.3,true,'#302d26');
+ for (const x of [-2.12,2.12,-9.2,-8.2])strip(pixel(x),10,false,'#36322c',pixel(-26),pixel(25));
+ // Use one decal and preserve the weathered asphalt as its visible base.
+ const overlay = new THREE.Mesh(new THREE.PlaneGeometry(68,68),
+  new THREE.MeshStandardMaterial({map:new THREE.CanvasTexture(canvas),transparent:true,
+   depthWrite:false,roughness:.72,metalness:0}));
+ overlay.material.map.colorSpace = THREE.SRGBColorSpace;
+ overlay.rotation.x = -Math.PI/2;
+ overlay.position.y = .003;
+ overlay.receiveShadow = true;
+ overlay.renderOrder = 1;
+ scene.add(overlay);
+}
+
 function buildFreightYard() {
  const sky = new THREE.Color(0x929d9d);
  scene.background = sky;
@@ -18,9 +107,7 @@ function buildFreightYard() {
  const asphalt = new THREE.MeshStandardMaterial({
   color:0x8c8c83, map:surface('#343d3e'), roughness:.84, metalness:.05
  });
- const wet = new THREE.MeshStandardMaterial({
-  color:0x262e2b, roughness:.72, metalness:.04
- });
+ applyYardMaterial(asphalt, 'asphalt_01', 26, 0xeee9e1, .68);
  const tar = mat(0x212a2b);
  const paint = mat(0x937447);
  const beam = mat(0x344347, .61);
@@ -32,15 +119,8 @@ function buildFreightYard() {
  box(0,-.19,0,68,.38,68,asphalt);
  for (let x=-30; x<=30; x+=5) box(x,.004,0,.035,.006,63,tar);
  for (let z=-30; z<=30; z+=6) box(0,.007,z,63,.006,.042,tar);
- for (let n=0; n<32; n++){
-  const x=(n*13%49)-24, z=(n*17%57)-28;
-  const puddle = new THREE.Mesh(new THREE.CircleGeometry(1, 15), wet);
-  puddle.rotation.x=-Math.PI/2;
-  puddle.receiveShadow = true;
-  puddle.position.set(x,.011+n*.00003,z);
-  puddle.scale.set(.45+(n%4)*.35,.35+(n%5)*.44,1);
-  scene.add(puddle);
- }
+ buildYardWear();
+ buildYardWetAreas();
  for (let z=-26;z<=26;z+=4)for(const x of [-4.4,4.4]){
   box(x,.016,z,.09,.014,2.8,paint);
  }

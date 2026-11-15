@@ -176,3 +176,6 @@ body:has(#overlay:not([style*="display: none"])) #chapter-labs > button,
 @media(max-width:600px){
  body:has(#overlay:not([style*="display: none"])) #toggle-labs[aria-expanded="false"]{display:none}
 }
+.yard-scene-only #hud,
+.yard-scene-only #chapter-labs {visibility:hidden}
+.yard-scene-only:has(#overlay:not([style*="display: none"])) #chapter-labs {visibility:visible}

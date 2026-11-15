@@ -46,17 +46,45 @@ function brushedFinish() {
 const enamel = new THREE.MeshStandardMaterial({
  color:0xaab8b5, map:servicePaint(), roughness:.57, metalness:.17
 });
+applyYardMaterial(enamel, 'blue_metal_plate', 1, 0xd4dfdf, .32);
 const brass = new THREE.MeshStandardMaterial({color:0xb89462, roughness:.42, metalness:.7});
 const brushed = brushedFinish();
 const connectorMetal = new THREE.MeshStandardMaterial({
  color:0xc4cbd0, roughness:.48, roughnessMap:brushed,
  bumpMap:brushed, bumpScale:.002, metalness:.57
 });
-const cabinetFinishes = {
- port: new THREE.MeshStandardMaterial({color:0x58746b, roughness:.67, metalness:.19}),
- cmd: new THREE.MeshStandardMaterial({color:0x66645b, roughness:.60, metalness:.23}),
- transfer: new THREE.MeshStandardMaterial({color:0x4f687d, roughness:.64, metalness:.21})
-};
+function paintedCabinetMap(roughness) {
+ const canvas = document.createElement('canvas');
+ canvas.width = canvas.height = 192;
+ const context = canvas.getContext('2d');
+ const surfaceTone = context.createLinearGradient(0,0,185,192);
+ surfaceTone.addColorStop(0,roughness ? '#b6b6b6' : '#e7e5e1');
+ surfaceTone.addColorStop(.56,roughness ? '#cdcdcd' : '#f0efec');
+ surfaceTone.addColorStop(1,roughness ? '#a3a3a3' : '#dcdbd7');
+ context.fillStyle = surfaceTone;
+ context.fillRect(0,0,192,192);
+ // Local handling marks and a little dirt near the cover's lower edge.
+ context.fillStyle = roughness ? '#96969690' : '#73706c39';
+ for (const [x,y,w] of [[11,145,12],[16,147,7],[19,150,5],[166,142,9],[169,145,6],[147,175,14],[22,181,22]]) {
+  context.fillRect(x,y,w,1);
+ }
+ const lowerEdge = context.createLinearGradient(0,151,0,192);
+ lowerEdge.addColorStop(0,'#00000000');
+ lowerEdge.addColorStop(1,roughness ? '#52525249' : '#26221c31');
+ context.fillStyle = lowerEdge;
+ context.fillRect(0,151,192,41);
+ const map = new THREE.CanvasTexture(canvas);
+ if (!roughness) map.colorSpace = THREE.SRGBColorSpace;
+ return map;
+}
+const paintedColor = paintedCabinetMap(false);
+const paintedRoughness = paintedCabinetMap(true);
+const cabinetFinishes = Object.fromEntries(
+ Object.entries({port:0x58746b,cmd:0x66645b,transfer:0x4f687d}).map(([id,color])=>[
+  id,new THREE.MeshStandardMaterial({
+   color,map:paintedColor,roughnessMap:paintedRoughness,roughness:.91,metalness:.15
+  })
+ ]));
 const insulation = new THREE.MeshStandardMaterial({color:0x18252b, roughness:.88});
 const panelSeam = new THREE.MeshStandardMaterial({color:0x273431, roughness:.72});
 const footRubber = new THREE.MeshStandardMaterial({color:0x181d1d,roughness:1});
@@ -134,6 +162,22 @@ function foldedBox(x,y,z,width,height,depth,bevel,material) {
   bevelSegments:1,steps:1,curveSegments:1
  });
  geometry.translate(0,0,-depth/2+bevel);
+ if (material.map || material.roughnessMap || material.bumpMap) {
+  const points = geometry.attributes.position;
+  const normal = geometry.attributes.normal;
+  const uv = geometry.attributes.uv;
+  for (let index = 0; index < points.count; index++) {
+   const nx = Math.abs(normal.getX(index));
+   const ny = Math.abs(normal.getY(index));
+   const nz = Math.abs(normal.getZ(index));
+   const px = points.getX(index)/width+.5;
+   const py = points.getY(index)/height+.5;
+   const pz = points.getZ(index)/depth+.5;
+   if (nz >= nx && nz >= ny) uv.setXY(index,px,py);
+   else if (nx >= ny) uv.setXY(index,pz,py);
+   else uv.setXY(index,px,pz);
+  }
+ }
  const part = new THREE.Mesh(geometry,material);
  part.position.set(x,y,z);
  part.castShadow = part.receiveShadow = true;
@@ -319,17 +363,24 @@ station('event','DRIVER IRQ DESK',0,12,0x82c591);
 station('exit','SHIFT CLOCK',0,27,0xc6bf91);
 buildCabinetBolts();
 
-const workLamp = new THREE.PointLight(0xe6ad58, 10, 4.4, 2);
+const workLamp = new THREE.PointLight(0xe6ad58, 10, 3.45, 2);
 scene.add(workLamp);
 const workNeutral = new THREE.Color(0xf2e2d4);
 let lastLitStation;
 let lastLitPhase;
+let lastDeparture;
+const yardDestinationLabel = {
+ port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
+ transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
+};
 function showStationSignal(target) {
  const phase = job?.phase;
  const stationId = job ? missions[job.source][0] : target.id;
- if (stationId === lastLitStation && phase === lastLitPhase) return;
+ const departure = running && step > 0 && !job && near?.id !== stationId ? near?.id : undefined;
+ if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture) return;
  lastLitStation = stationId;
  lastLitPhase = phase;
+ lastDeparture = departure;
  const signal = stationSignals[phase];
  const active = stations.find(station => station.id === stationId);
  for (const station of stations) {
@@ -341,12 +392,13 @@ function showStationSignal(target) {
   station.screen.emissiveIntensity = selected ? .30 : .12;
   station.approach.emissive.set(color);
   station.approach.emissiveIntensity = selected ? .68 : 0;
-  station.display(selected ? (displayStates[phase] ?? 'OPERATE HERE') : 'STANDBY',
-   selected ? color : 0x75888d);
+  if (selected) station.display(displayStates[phase] ?? 'OPERATE HERE',color);
+  else if (station.id === departure) station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0);
+  else station.display('STANDBY',0x75888d);
  }
- workLamp.position.set(active.x-.22, 2.13, active.z+.96);
- workLamp.color.set(signal?.color ?? active.light.material.color).lerp(workNeutral,.31);
- workLamp.intensity = signal?.power ?? 9;
+ workLamp.position.set(active.x-.30, 1.96, active.z+1.24);
+ workLamp.color.set(signal?.color ?? active.light.material.color).lerp(workNeutral,.55);
+ workLamp.intensity = (signal?.power ?? 9)*.81;
 }
 const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Host driver: queue Enable Slot (E), then write Doorbell 0 (B).','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
 const startPosition = [-9, 1.7, -14];
@@ -566,15 +618,7 @@ function advance(){step++;update()}
 function interact(){if(paused||!near||finished)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(submissions[step]){if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;$('quick-start').hidden=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${ringData.event.dequeue} completion events. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';$('journey').hidden=false;document.dispatchEvent(new Event('shift:complete'));return}advance()}
 const blocked=(x,z)=>solid.some(o=>Math.abs(x-o.x)<o.w&&Math.abs(z-o.z)<o.d);
 function move(dx,dz){const count=Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.15);for(let i=0;i<count;i++){if(!blocked(position.x+dx/count,position.z))position.x+=dx/count;if(!blocked(position.x,position.z+dz/count))position.z+=dz/count}position.x=THREE.MathUtils.clamp(position.x,-30,30);position.z=THREE.MathUtils.clamp(position.z,-30,30)}
-function navigate() {
- if (paused) return;
- if (job && job.phase !== 'queued') {
-  route = [];
-  message($('controller-status').textContent);
-  return;
- }
- const target = stations.find(station => station.id === missions[step][0]);
- const start = [Math.round(position.x), Math.round(position.z)];
+function findStationRoute(start, target) {
  const queue = [start];
  const previous = new Map([[start.join(','),null]]);
  const neighbors = [[0,-1],[1,0],[0,1],[-1,0]];
@@ -583,12 +627,11 @@ function navigate() {
   const [dx,dz] = [point[0]-target.x, point[1]-target.z];
   // Position the player in front of the faceplate, within the interaction radius.
   if (Math.abs(dx) <= 1 && dz === 3) {
-   route = [];
+   const waypoints = [];
    for (let waypoint = point; waypoint; waypoint = previous.get(waypoint.join(','))) {
-    route.unshift(waypoint);
+    waypoints.unshift(waypoint);
    }
-   message(`Following the aisle to ${target.name}. WASD cancels guidance; E operates on arrival.`);
-   return;
+   return waypoints;
   }
   for (const [offsetX,offsetZ] of neighbors) {
    const next = [point[0]+offsetX, point[1]+offsetZ];
@@ -598,7 +641,21 @@ function navigate() {
    queue.push(next);
   }
  }
- message('No safe route found. Use WASD to reach a clear aisle.');
+ return [];
+}
+
+function navigate() {
+ if (paused) return;
+ if (job && job.phase !== 'queued') {
+  route = [];
+  message($('controller-status').textContent);
+  return;
+ }
+ const target = stations.find(station => station.id === missions[step][0]);
+ route = findStationRoute([Math.round(position.x), Math.round(position.z)], target);
+ message(route.length
+  ? `Following the aisle to ${target.name}. WASD cancels guidance; E operates on arrival.`
+  : 'No safe route found. Use WASD to reach a clear aisle.');
 }
 const missionActions = [
  '重置 USB2 根端口', '提交 Enable Slot', '领取 Slot ID',
@@ -708,6 +765,11 @@ function manual() {
 }
 $('briefing-manual').onclick = manual;
 $('closemanual').onclick = manual;
+document.addEventListener('keydown', event => {
+ if (event.code !== 'KeyV' || event.repeat || !running || paused || !startup.ready) return;
+ if ($('driver-workbench')?.open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
+ document.body.classList.toggle('yard-scene-only');
+});
 document.addEventListener('keydown',e=>{if($('commission') && e.code==='Enter' && !e.repeat && !e.target.matches?.('input, textarea, select, [contenteditable]')){e.preventDefault();$('commission').querySelector('.current-action:not(:disabled)')?.click();return}if($('commission') || $('driver-workbench')?.open || e.target.matches?.('input, textarea, select, [contenteditable]'))return;if(e.code==='Escape'&&!$('manual').hidden){manual();return;}if(paused&&e.code!=='Escape')return;if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&!paused)e.preventDefault();keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD'].includes(e.code))route=[];if(e.repeat)return;if(e.code==='KeyI'&&!paused)nextEntry();if(e.code==='KeyO'&&!paused)nextRing();if(e.code==='KeyF')repairCycle();if(e.code==='KeyC'&&!paused&&!$('code-workbench').hidden)$('code-workbench').click();if(e.code==='KeyB')ringDoorbell();if(e.code==='KeyH')handleCompletion();if(e.code==='KeyE')interact();if(e.code==='KeyG')navigate();if(e.code==='Tab')manual();if(e.code==='Escape'&&running&&!finished){if(!$('manual').hidden){$('manual').hidden=true;setPause(true)}else setPause(!paused)}});
 document.addEventListener('keyup',e=>keys[e.code]=false);window.addEventListener('blur',()=>{if(running&&!finished&&!$('driver-workbench')?.open)setPause(true)});let drag=false;renderer.domElement.onmousedown=()=>drag=true;window.onmouseup=()=>drag=false;window.addEventListener('mousemove',e=>{if(paused)return;if(document.pointerLockElement||drag){yaw-=e.movementX*.0025;pitch=Math.max(-1.2,Math.min(1.2,pitch-e.movementY*.0025))}});
 sun.shadow.autoUpdate = false;
@@ -782,6 +844,7 @@ function frame() {
  }
  const target = stations.find(station => station.id === missions[step][0]);
  showStationSignal(target);
+ showYardRoute(target);
  const signal = stationSignals[job?.phase];
  const targetLabel = signal?.label ?? (near?.id === target.id
   ? `[E] ${target.name}`
