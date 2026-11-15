@@ -76,6 +76,7 @@ function createYardSky(sunDirection) {
  dome.renderOrder = -100;
  scene.add(dome);
  scene.fog.color.setRGB(...horizon.map(channel => channel/255), THREE.SRGBColorSpace);
+ return map;
 }
 
-createYardSky(sun.position.clone().normalize());
+const yardSkyTexture = createYardSky(sun.position.clone().normalize());

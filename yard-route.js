@@ -3,6 +3,44 @@
 let yardRouteMarkers;
 let lastYardRouteKey;
 let junctionMarker;
+let yardLandingGuide;
+
+function showLandingGuide(waypoints,target) {
+ const point = waypoints.at(-1);
+ if (!point || waypoints.length > 10) {
+  if (yardLandingGuide) yardLandingGuide.visible = false;
+  return;
+ }
+ if (!yardLandingGuide) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 144;
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#1d2629';
+  context.fillRect(0,0,512,144);
+  context.strokeStyle = '#e7c88c';
+  context.lineWidth = 6;
+  context.strokeRect(8,8,496,128);
+  context.fillStyle = '#f3d994';
+  context.font = 'bold 70px sans-serif';
+  context.fillText('↑',25,98);
+  context.font = 'bold 49px monospace';
+  context.fillText('FACE PANEL',123,94,355);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const geometry = new THREE.PlaneGeometry(1.35,.38);
+  geometry.rotateX(-Math.PI/2);
+  yardLandingGuide = new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({map:texture}));
+  yardLandingGuide.name = 'Face panel landing guide';
+  scene.add(yardLandingGuide);
+ }
+ const yaw = Math.atan2(point[0]-target.x,point[1]-target.z);
+ yardLandingGuide.visible = true;
+ // Sit inside the stand zone instead of under the player when they reach it.
+ yardLandingGuide.position.set(point[0]-.67*Math.sin(yaw),.034,point[1]-.67*Math.cos(yaw));
+ yardLandingGuide.rotation.y = yaw;
+ yardLandingGuide.userData.target = target.id;
+}
 
 function createJunctionMarker() {
  const canvas = document.createElement('canvas');
@@ -107,6 +145,7 @@ function showYardRoute(target) {
  }
  const waypoints = active ? findStationRoute([x,z],target) : [];
  showNextJunction(waypoints,target);
+ showLandingGuide(waypoints,target);
  for (const [index, marker] of yardRouteMarkers.entries()) {
   const start = waypoints[index];
   const end = waypoints[index+1];

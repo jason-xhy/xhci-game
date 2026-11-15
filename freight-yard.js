@@ -33,7 +33,7 @@ function wetEdgeMask(seed) {
 function buildYardWetAreas() {
  // Some patches spread along slab joints, others occupy depressions beside the aisle.
  const puddles = [
-  [-11.5,-18.4,2.0,.57,.10],[-7.25,-16.9,1.03,.68,-.28],[-5.2,-21,.58,2.04,.08],
+  [-11.25,-17.85,1.32,1.57,-.18],[-7.25,-16.9,1.03,.68,-.28],[-5.2,-21,.58,2.04,.08],
   [-13.2,-6.0,2.95,.55,-.05],[-6.5,-6.3,2.3,.65,.06],[-3.2,-13.5,1.72,.76,-.34],
   [2.3,-18.5,2.14,.46,.10],[5.2,-12,.68,2.18,.08],[10.7,-9.7,.97,1.70,-.15],
   [6.9,-4.8,1.3,.98,-.36],[-8.1,5.9,2.28,.70,-.02],[-4.8,3.0,.94,1.86,.12],
@@ -46,6 +46,7 @@ function buildYardWetAreas() {
  for (let variant = 0; variant < 3; variant++) {
   const group = puddles.filter((_,index)=>index%3 === variant);
   const water = new THREE.MeshStandardMaterial({
+   name:'Yard wet surface',
    color:0x272e2c, alphaMap:wetEdgeMask(1+variant*2), transparent:true,
    opacity:.71, depthWrite:false, roughness:.46, metalness:.025
   });
