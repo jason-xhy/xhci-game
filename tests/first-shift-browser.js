@@ -1,4 +1,20 @@
 const assert=require('node:assert/strict');const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
 (async()=>{const browser=await chromium.launch({executablePath:process.env.CHROME_PATH||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true,args:['--no-proxy-server']});try{const page=await browser.newPage({viewport:{width:1280,height:900}});const errors=[];page.on('pageerror',e=>errors.push(e.message));await page.goto(process.env.TEST_URL||'http://127.0.0.1:8731');await page.getByRole('button',{name:'ENTER THE FACTORY →',exact:true}).click();for(const name of ['Halt','Reset','Wait for HCRST clear','Wait for CNR clear','Set MaxSlotsEn and DCBAAP','Set CRCR and RCS','Set ERST and ERDP','Run'])await page.locator('#commission').getByRole('button',{name,exact:true}).click();assert.equal(await page.locator('#commission').count(),0);console.log('PASS startup via visible buttons');
-for(let stage=0;stage<14;stage++){if(stage===7){await page.waitForFunction(()=>document.getElementById('task').textContent.includes('Repair'));await page.keyboard.press('KeyF');}await page.keyboard.press('KeyG');await page.waitForFunction(()=>document.getElementById('message').textContent.includes('At the station.'),{},{timeout:45000});if([2,5,7,10,12].includes(stage)){await page.waitForFunction(()=>document.getElementById('rings').textContent.includes(': ready'),{},{timeout:15000});}await page.keyboard.press('KeyE');console.log('stage',stage+1,'operated');}
+for(let stage=0;stage<14;stage++){
+ if(stage===7){await page.waitForFunction(()=>document.getElementById('task').textContent.includes('Repair'));await page.keyboard.press('KeyF');}
+ if([2,5,7,10,12].includes(stage)){
+  await page.waitForFunction(()=>document.getElementById('rings').textContent.includes('IRQ pending'),{},{timeout:15000});
+  await page.keyboard.press('KeyH');
+ } else {
+  await page.keyboard.press('KeyG');
+  await page.waitForFunction(()=>document.getElementById('message').textContent.includes('At the station.'),{},{timeout:45000});
+  await page.keyboard.press('KeyE');
+  if([1,4,6,9,11].includes(stage)){
+   assert.match(await page.locator('#rings').textContent(),/: queued/);
+   assert.match(await page.locator('#rings .trb-changed').allTextContents().then(v=>v.join(' ')),/ENQ/);
+   await page.keyboard.press('KeyB');
+  }
+ }
+ console.log('stage',stage+1,'operated');
+}
 assert.match(await page.locator('#overlay h3').innerText(),/SHIFT COMPLETE/);assert.match(await page.locator('#overlay p').first().innerText(),/5 completion events/);assert.deepEqual(errors,[]);await page.getByRole('button',{name:'START A NEW SHIFT',exact:true}).click();assert.equal(await page.locator('#commission').count(),1);console.log('PASS complete FirstShift14 interactions, Cycle repair,5 completions and replay');}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1});

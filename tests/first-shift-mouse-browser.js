@@ -62,6 +62,16 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
    '领取端点配置完成事件', '提交 SET_CONFIGURATION', '领取设备配置完成事件', '打卡下班'
   ];
   for (const [index, label] of expected.entries()) {
+   if ([2, 5, 7, 10, 12].includes(index)) {
+    if (index === 7) {
+     await page.waitForFunction(() => document.querySelector('#guide').textContent.startsWith('修复 Cycle'));
+     await checkCode('transfer', true);
+    }
+    await page.waitForFunction(() => document.querySelector('#guide').textContent.startsWith('处理 IRQ'));
+    if (sourceCases.has(index)) await checkCode(sourceCases.get(index));
+    await action.click();
+    continue;
+   }
    const match = await page.waitForFunction(({index, label}) => {
     const {textContent, disabled} = document.querySelector('#guide');
     const stage = document.querySelector('#next-stage').textContent;
@@ -86,6 +96,9 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
    });
    if (sourceCases.has(index)) await checkCode(sourceCases.get(index));
    await action.click();
+   if ([1, 4, 6, 9, 11].includes(index)) {
+    await page.getByRole('button', {name: '写门铃（B）', exact: true}).click();
+   }
    console.log(`PASS mouse step ${index + 1}: ${label}`);
   }
   assert.equal(await page.locator('#overlay h3').innerText(), 'SHIFT COMPLETE');

@@ -133,3 +133,6 @@
   background: #243638;
   letter-spacing: normal;
 }
+.trb-key{display:block;margin-top:4px;color:#ddbd86}
+.trb-changed{background:#573e21;color:#ffe1a6;box-shadow:inset 0 -1px #e6ad58}
+#lab-directory input{max-width:100%;padding:6px;background:#0b1617;color:#e3f7ef;border:1px solid #6d9a8d}

@@ -14,7 +14,9 @@ assert.equal(runDriverProgram('transfer',
 assert.equal(runDriverProgram('transfer',
  'write_barrier();\nwrite_trbs();\npublish_cycle();\nring_endpoint();').success, false);
 assert.equal(runDriverProgram('cmd',
- 'ring_doorbell();\nqueue_command();\nring_doorbell();\npoll_event();').success, true);
+ 'ring_doorbell();\nqueue_command();\nring_doorbell();\nhandle_irq();').success, true);
+assert.equal(runDriverProgram('cmd', 'queue_command();\nring_doorbell();').success, false);
+assert.equal(runDriverProgram('cmd', 'queue_command();\nhandle_irq();\nring_doorbell();').success, false);
 assert.equal(runDriverProgram('port',
  'prepare_reset();\nwrite_portsc();\nread_portsc(); // sample').state.portObserved, true);
 assert.equal(runDriverProgram('event',

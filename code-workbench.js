@@ -114,7 +114,7 @@ function openWorkbench(key) {
   controls.append(control);
   return control;
  }
- button('运行模拟', () => {
+ const runButton = button('运行模拟（Ctrl/⌘+Enter）', () => {
   const run = runDriverProgram(key, editor.value);
   trace.textContent = run.trace.join('\n');
   result.textContent = run.success ? '运行成功 · ' + program.explanation
@@ -138,6 +138,12 @@ function openWorkbench(key) {
   repairCycle();
  });
  apply.hidden = true;
+ workbench.onkeydown = event => {
+  if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+   event.preventDefault();
+   runButton.click();
+  }
+ };
  editor.addEventListener('input', () => {
   apply.hidden = true;
   result.textContent = '代码已修改，运行后查看结果。';

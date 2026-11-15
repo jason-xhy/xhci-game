@@ -38,13 +38,14 @@ function station(id,name,x,z,color){
   const fastener=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.034,6),brass);
   fastener.rotation.x=Math.PI/2;fastener.position.set(x+dx,y,z+.625);scene.add(fastener);
  }
-const light=box(x,1.95,z,.9,.12,.5,new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:1}));sign(name,x,2.7,z+.64,'#'+color.toString(16),3.2);stations.push({id,name,x,z,light})}station('port','ROOT PORT / USB2',-9,-23,0xc6bf91);station('cmd','COMMAND DISPATCH',-9,-5,0xe6ad58);station('ctx','CONTEXT WORKBENCH',9,-23,0xc6bf91);station('transfer','EP0 DISPATCH',9,-5,0x67ccd3);station('event','EVENT COLLECTION',0,12,0x82c591);station('exit','SHIFT CLOCK',0,27,0xc6bf91);
-const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Walk to command dispatch. Queue Enable Slot and ring doorbell 0.','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
+const light=box(x,1.95,z,.9,.12,.5,new THREE.MeshStandardMaterial({color,emissive:color,emissiveIntensity:1}));sign(name,x,2.7,z+.64,'#'+color.toString(16),3.2);stations.push({id,name,x,z,light})}station('port','ROOT PORT / USB2',-9,-23,0xc6bf91);station('cmd','HOST COMMAND QUEUE',-9,-5,0xe6ad58);station('ctx','CONTEXT WORKBENCH',9,-23,0xc6bf91);station('transfer','EP0 DISPATCH',9,-5,0x67ccd3);station('event','DRIVER IRQ DESK',0,12,0x82c591);station('exit','SHIFT CLOCK',0,27,0xc6bf91);
+const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Host driver: queue Enable Slot (E), then write Doorbell 0 (B).','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
 const position=new THREE.Vector3(0,1.7,25),history=[];
 const ringData={cmd:{cx:-17,cz:-9,color:0xe6ad58,enqueue:0,dequeue:0},transfer:{cx:17,cz:-9,color:0x67ccd3,enqueue:0,dequeue:0},event:{cx:0,cz:17,color:0x82c591,enqueue:0,dequeue:0}};
 for(const r of Object.values(ringData))Object.assign(r,{size:4,enq:0,deq:0,pcs:1,ccs:1,entries:Array(4).fill(null)});
 function pushTRB(r,type,id){if(r.enqueue-r.dequeue>=r.size-1)throw Error('Ring full');const t={type,id,cycle:r.pcs,index:r.enq,slot:1,endpoint:1,pointer:`0x${((r===ringData.cmd?0x1000:r===ringData.transfer?0x2000:0x3000)+r.enq*16).toString(16)}`};r.entries[r.enq]=t;r.enqueue++;if(++r.enq===r.size){r.enq=0;r.pcs^=1}return t}
 function popTRB(r){const t=r.entries[r.deq];if(r.dequeue===r.enqueue||!t||t.cycle!==r.ccs)return null;r.dequeue++;if(++r.deq===r.size){r.deq=0;r.ccs^=1}return t}
+const ringFields=new Map();
 let inspectRing='cmd',inspectIndex=0;
 function inspectTRB(){updateRings();const r=ringData[inspectRing],t=r.entries[inspectIndex];message(`${inspectRing}[${inspectIndex}] ${t?`${t.type} | Cycle=${t.cycle} | job=${t.id} | Slot=${t.slot} EP=${t.endpoint} | ${t.pointer}`:'empty'} | consumer head CCS=${r.ccs}. [I] next entry [O] next ring [F] publish expected Cycle at stalled head.`)}
 function repairCycle(){if(paused||!job||job.phase!=='stalled')return;const r=ringData[job.ring];if(inspectRing!==job.ring||inspectIndex!==r.deq){message('Select the stalled dequeue entry using O / I first.');return}r.entries[r.deq].cycle=r.ccs;job.phase='submitted';log('Cycle repaired and published; endpoint doorbell rung again.');updateRings();inspectTRB()}
@@ -52,31 +53,78 @@ const submissions={1:{ring:'cmd',name:'Enable Slot',types:['Enable Slot'],event:
 function log(s){history.push(s);$('log').textContent=history.slice(-4).join('\n')}
 function message(s){$('message').textContent=s}
 function update(){const m=missions[step];$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${step>0?'ENABLED':'ATTACHED'}\nSLOT ${step>=11?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${step>=13?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
-function updateRings(){if(job?.phase==='stalled'){$('task').textContent='Repair the descriptor Cycle mismatch';$('hint').textContent='No completion exists yet. Press F to repair the automatically selected EP0 head, then collect the event.';}else if(job&&step===7){$('task').textContent=missions[step][1];$('hint').textContent=missions[step][2];}const rows=Object.entries(ringData).flatMap(([name,r])=>[`${name.toUpperCase()} ENQ[${r.enq}] PCS=${r.pcs} DEQ[${r.deq}] CCS=${r.ccs}`,...r.entries.map((t,i)=>`${inspectRing===name&&inspectIndex===i?'>':' '}[${i}] ${r.enq===i?'ENQ ':''}${r.deq===i?'DEQ ':''}${t?`${t.type} C=${t.cycle} #${t.id} ${t.pointer}`:'empty'}`)]);$('rings').textContent=rows.join('\n')+'\n'+(job?`#${job.id} ${job.name}: ${job.phase==='stalled'?'CYCLE MISMATCH — selected head is not owned by xHC. Press F to publish Cycle=CCS and ring again.':job.phase}`:'No outstanding TRBs');}
+function updateRings(){if(job?.phase==='stalled'){$('task').textContent='Repair the descriptor Cycle mismatch';$('hint').textContent='No completion exists yet. Press F to repair the automatically selected EP0 head, then collect the event.';}else if(job&&step===7){$('task').textContent=missions[step][1];$('hint').textContent=missions[step][2];}const rows=Object.entries(ringData).flatMap(([name,r])=>[
+ [name,[name.toUpperCase(),`ENQ[${r.enq}]`,`PCS=${r.pcs}`,`DEQ[${r.deq}]`,`CCS=${r.ccs}`]],
+ ...r.entries.map((t,i)=>[`${name}-${i}`,[
+ `${inspectRing===name&&inspectIndex===i?'>':' '}[${i}]`,r.enq===i?'ENQ':'',r.deq===i?'DEQ':'',t?.type??'empty',t?`C=${t.cycle}`:'',t?`#${t.id}`:'',t?.pointer??'',t?.completionCode??''
+ ]])
+ ]);rows.push(['status',[job?`#${job.id} ${job.name}: ${job.phase}${job.irqPending?' · IRQ pending':''}`:'No outstanding TRBs']]);
+ const fragment=document.createDocumentFragment();
+ for(const [key,fields] of rows){
+  const row=document.createElement('span');row.className='trb-row';
+  const old=ringFields.get(key);
+  const changes=fields.map((value,i)=>old&&value!==old.fields[i]&&(i!==0||key==='status'));
+  const changed=changes.some(Boolean);
+  fields.forEach((value,i)=>{
+   if(!value)return;
+   if(row.childNodes.length)row.append(' ');
+   const field=document.createElement('span');field.textContent=value;
+   if(changes[i]||(!changed&&old?.changed[i]))field.className='trb-changed';
+   row.append(field);
+  });
+  ringFields.set(key,{fields,changed:changed?changes:old?.changed??changes});
+  fragment.append(row,'\n');
+ }
+ $('rings').replaceChildren(fragment);
+}
+
 function placeParcel(p,t){const r=ringData[p.ring],leg=Math.min(t,.9999)*4;let x,z;if(leg<1){x=-6+12*leg;z=-2}else if(leg<2){x=6;z=-2+4*(leg-1)}else if(leg<3){x=6-12*(leg-2);z=2}else{x=-6;z=2-4*(leg-3)}p.o.position.set(r.cx+x,1.8,r.cz+z);p.label.position.set(r.cx+x,2.55,r.cz+z);}
 function spawn(ring,label,index=0){const r=ringData[ring],o=box(0,1.8,0,1,.65,.7,mat(r.color)),tag=sign(label,0,0,0,'#'+r.color.toString(16),3);o.castShadow=false;const p={o,label:tag,ring,index};o.visible=tag.visible=index===0;parcels.push(p);placeParcel(p,0);return p}
 function clearParcels(){for(const p of parcels){scene.remove(p.o,p.label);p.o.geometry.dispose();p.o.material.dispose();p.label.geometry.dispose();p.label.material.map.dispose();p.label.material.dispose()}parcels.length=0}
-function submit(def){playYardCue('doorbell');job={...def,id:++serial,phase:'submitted',time:0,consumed:0,source:step};job.trbs=def.types.map(type=>pushTRB(ringData[def.ring],type,serial));if(step===6){job.trbs[0].cycle^=1;job.fault=true;}def.types.forEach((type,i)=>spawn(def.ring,`#${serial} ${type}`,i));log(`#${serial} ${def.name}: ${def.types.length} TRB(s), doorbell ${def.ring==='cmd'?'0':'slot 1 / EP0'}`);message('Watch the submitted TRBs travel to the controller. Completion is not ready yet.');step++;update()}
+function submit(def){
+ job={...def,id:++serial,phase:'queued',time:0,consumed:0,source:step};
+ job.trbs=def.types.map(type=>pushTRB(ringData[def.ring],type,serial));
+ if(step===6)job.trbs[0].cycle^=1;
+ log(`Host queued #${serial} ${def.name}; waiting for doorbell.`);
+ message('TRBs are in memory. Press B to notify xHC.');
+ updateRings();
+}
+function ringDoorbell(){
+ if(paused||job?.phase!=='queued'||near?.id!==missions[step][0])return;
+ playYardCue('doorbell');
+ job.phase='submitted';
+ job.types.forEach((type,i)=>spawn(job.ring,`#${job.id} ${type}`,i));
+ log(`Host wrote doorbell ${job.ring==='cmd'?'0':'slot 1 / EP0'}; xHC can fetch #${job.id}.`);
+ message('Doorbell delivered. Watch the ring pointers move, then press H when IRQ arrives.');
+ advance();
+}
 function tickJob(dt){
- if(paused||!job||job.phase==='ready'||job.phase==='stalled')return;
+ if(paused||!job||['queued','ready','stalled'].includes(job.phase))return;
  job.time+=dt;
  if(job.phase==='submitted'){
-  for(const p of parcels){p.o.visible=p.label.visible=job.time>=p.index*.65;placeParcel(p,Math.min(1,Math.max(0,(job.time-p.index*.65)/4)));}
+  for(const p of parcels){p.o.visible=p.label.visible=job.time>=p.index*.65;placeParcel(p,Math.min(1,Math.max(0,(job.time-p.index*.35)/2)));}
   const r=ringData[job.ring];
   while(job.consumed<job.trbs.length){
    const t=r.entries[r.deq];
    if(!t||t.cycle!==r.ccs){job.phase='stalled';playYardCue('fault');route=[];inspectRing=job.ring;inspectIndex=r.deq;log(`xHC stopped at entry ${r.deq}: Cycle mismatch. No completion produced.`);inspectTRB();return;}
-   if(job.time<4+job.consumed*.65)break;
+   if(job.time<2+job.consumed*.35)break;
    popTRB(r);job.consumed++;updateRings();
   }
-  if(job.consumed===job.trbs.length){clearParcels();pushTRB(ringData.event,job.event,job.id);spawn('event',`#${job.id} ${job.event} · SUCCESS`);job.phase='returning';job.time=0;log(`xHC consumed #${job.id}; produced ${job.event}.`);updateRings();}
- }else if(job.phase==='returning'){placeParcel(parcels[0],Math.min(.82,job.time/4*.82));if(job.time>=4){job.phase='ready';playYardCue('event');log(`#${job.id} completion ready for software.`);message('Completion waiting at Event Collection. Press E there to consume it and advance ERDP.');updateRings();}}
+  if(job.consumed===job.trbs.length){clearParcels();pushTRB(ringData.event,job.event,job.id).completionCode='Success';spawn('event',`#${job.id} ${job.event} · SUCCESS`);job.phase='returning';job.time=0;log(`xHC consumed #${job.id}; produced ${job.event}.`);updateRings();}
+ }else if(job.phase==='returning'){placeParcel(parcels[0],Math.min(.82,job.time/1.2*.82));if(job.time>=1.2){job.phase='ready';job.irqPending=true;playYardCue('event');log(`#${job.id} xHC raised IRQ after writing the Event Ring.`);message('IRQ received. Press H to step through the driver handler and advance ERDP.');updateRings();}}
+}
+function handleCompletion(){
+ if(paused||!job?.irqPending)return;
+ const completion=popTRB(ringData.event);
+ if(!completion||completion.id!==job.id)throw Error('Completion correlation');
+ log(`Driver IRQ: read #${job.id} ${completion.type}: ${completion.completionCode}; advanced ERDP to entry ${ringData.event.deq}.`);
+ clearParcels();job=null;route=[];message(missions[step][4]);advance();
 }
 function advance(){step++;update()}
-function interact(){if(paused||!near||finished)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(submissions[step]){if(job){message('Outstanding work must complete first.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){inspectRing=job.ring;inspectIndex=ringData[job.ring].deq;inspectTRB();message('No completion: EP0 stopped on a Cycle mismatch. Press F to repair the selected entry, then wait for completion.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}const completion=popTRB(ringData.event);if(!completion||completion.id!==job.id)throw Error('Completion correlation');log(`Software consumed #${job.id} ${job.event}; ERDP advanced to ${ringData.event.dequeue}.`);clearParcels();job=null;message(m[4]);advance();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${ringData.event.dequeue} completion events. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';return}advance()}
+function interact(){if(paused||!near||finished)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(submissions[step]){if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){inspectRing=job.ring;inspectIndex=ringData[job.ring].deq;inspectTRB();message('No completion: EP0 stopped on a Cycle mismatch. Press F to repair the selected entry, then wait for completion.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${ringData.event.dequeue} completion events. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';return}advance()}
 const blocked=(x,z)=>solid.some(o=>Math.abs(x-o.x)<o.w&&Math.abs(z-o.z)<o.d);
 function move(dx,dz){const count=Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.15);for(let i=0;i<count;i++){if(!blocked(position.x+dx/count,position.z))position.x+=dx/count;if(!blocked(position.x,position.z+dz/count))position.z+=dz/count}position.x=THREE.MathUtils.clamp(position.x,-30,30);position.z=THREE.MathUtils.clamp(position.z,-30,30)}
-function navigate(){if(paused)return;if(job?.phase==='stalled'){route=[];inspectRing=job.ring;inspectIndex=ringData[job.ring].deq;inspectTRB();message('Transfer stopped: no event to collect. Press F now to fix the selected EP0 Cycle bit, then G to reach Event Collection.');return;}const target=stations.find(s=>s.id===missions[step][0]);const start=[Math.round(position.x),Math.round(position.z)],queue=[start],seen=new Map([[start.join(','),null]]);let end=null;for(let i=0;i<queue.length;i++){const a=queue[i];if(Math.hypot(a[0]-target.x,a[1]-target.z)<2.4){end=a;break}for(const [dx,dz] of [[0,-1],[1,0],[0,1],[-1,0]]){const b=[a[0]+dx,a[1]+dz],k=b.join(',');if(Math.abs(b[0])>29||Math.abs(b[1])>29||seen.has(k)||blocked(...b))continue;seen.set(k,a);queue.push(b)}}if(!end){message('No safe route found. Use WASD to reach a clear aisle.');return}route=[];for(let a=end;a;a=seen.get(a.join(',')))route.unshift(a);message(`Following the aisle to ${target.name}. WASD cancels guidance; E operates on arrival.`)}
+function navigate(){if(paused)return;if(job?.phase==='stalled'){route=[];inspectRing=job.ring;inspectIndex=ringData[job.ring].deq;inspectTRB();message('Transfer stopped: no event to collect. Press F now to fix the selected EP0 Cycle bit, then G to reach Driver IRQ Desk.');return;}const target=stations.find(s=>s.id===missions[step][0]);const start=[Math.round(position.x),Math.round(position.z)],queue=[start],seen=new Map([[start.join(','),null]]);let end=null;for(let i=0;i<queue.length;i++){const a=queue[i];if(Math.hypot(a[0]-target.x,a[1]-target.z)<2.4){end=a;break}for(const [dx,dz] of [[0,-1],[1,0],[0,1],[-1,0]]){const b=[a[0]+dx,a[1]+dz],k=b.join(',');if(Math.abs(b[0])>29||Math.abs(b[1])>29||seen.has(k)||blocked(...b))continue;seen.set(k,a);queue.push(b)}}if(!end){message('No safe route found. Use WASD to reach a clear aisle.');return}route=[];for(let a=end;a;a=seen.get(a.join(',')))route.unshift(a);message(`Following the aisle to ${target.name}. WASD cancels guidance; E operates on arrival.`)}
 const missionActions = [
  '重置 USB2 根端口', '提交 Enable Slot', '领取 Slot ID',
  '准备设备上下文', '提交 Address Device', '领取地址分配完成事件',
@@ -92,9 +140,9 @@ function updateNextAction(target) {
  const atTarget = near?.id === target.id;
  const codeButton = $('code-workbench');
  const lesson = typeof workbenchCases === 'undefined' ? null : workbenchCases[target.id];
- codeButton.hidden = job?.phase !== 'stalled' && (!atTarget || Boolean(route.length) || lesson?.step !== step);
+ codeButton.hidden = job?.phase !== 'stalled' && (lesson?.step !== step || (!job?.irqPending && (!atTarget || Boolean(route.length))));
  if (!codeButton.hidden) {
-  const caption = '驱动代码台 · ' + solvedCases.size + '/4';
+  const caption = '驱动代码台（C） · ' + solvedCases.size + '/4';
   if (codeButton.textContent !== caption) codeButton.textContent = caption;
  }
  const actionName = missionActions[step];
@@ -109,6 +157,14 @@ function updateNextAction(target) {
    inspectIndex = ringData[job.ring].deq;
    repairCycle();
   };
+ } else if (job?.irqPending) {
+  instruction = 'xHC 已写入 Event Ring 并发出 IRQ。在当前位置按 H，单步执行驱动中断处理。';
+  label = '处理 IRQ（H）';
+  action = handleCompletion;
+ } else if (atTarget && job?.phase === 'queued') {
+  instruction = 'TRB 已入队；写门铃后 xHC 才能开始消费。';
+  label = '写门铃（B）';
+  action = ringDoorbell;
  } else if (route.length) {
   instruction = '正在沿通道前往 ' + target.name + '，到达后可操作。';
   label = '正在前往工位…';
@@ -117,10 +173,10 @@ function updateNextAction(target) {
   label = '前往 ' + target.name + '（G）';
   action = navigate;
  } else if (target.id === 'event' && job?.phase !== 'ready') {
-  instruction = '控制器正在处理。完成事件抵达后，点击「' + actionName + '」。';
-  label = '等待完成事件…';
+  instruction = '控制器正在处理。IRQ 到达后按 H 进入驱动处理程序。';
+  label = '等待 IRQ…';
  } else {
-  instruction = '已到达 ' + target.name + '。点击「' + actionName + '」。';
+  instruction = '已到达 ' + target.name + '。按 E：' + actionName + '。';
   label = actionName + '（E）';
   action = interact;
  }
@@ -131,16 +187,16 @@ function updateNextAction(target) {
  button.disabled = !action;
 }
 $('guide').onclick = () => nextAction?.();
-function reset(){$('overlay').querySelector('h3').textContent='FIRST SHIFT';$('overlay').querySelector('p').textContent='Walk the floor. Feed the command line. Collect the completions.';$('start').textContent='ENTER THE FACTORY →';startup.reset();startupFeedback='';step=0;serial=0;job=null;finished=false;inspectRing='cmd';inspectIndex=0;keys={};near=null;clearParcels();history.length=0;$('log').textContent='';for(const r of Object.values(ringData)){r.enqueue=r.dequeue=r.enq=r.deq=0;r.pcs=r.ccs=1;r.entries.fill(null)}position.set(0,1.7,25);yaw=pitch=0;route=[];message('New shift. Inspect the USB2 root port.');update()}
+function reset(){$('overlay').querySelector('h3').textContent='FIRST SHIFT';$('overlay').querySelector('p').textContent='Walk the floor. Feed the command line. Collect the completions.';$('start').textContent='ENTER THE FACTORY →';startup.reset();startupFeedback='';step=0;serial=0;job=null;finished=false;inspectRing='cmd';inspectIndex=0;keys={};near=null;clearParcels();history.length=0;ringFields.clear();$('log').textContent='';for(const r of Object.values(ringData)){r.enqueue=r.dequeue=r.enq=r.deq=0;r.pcs=r.ccs=1;r.entries.fill(null)}position.set(0,1.7,25);yaw=pitch=0;route=[];message('New shift. Inspect the USB2 root port.');update()}
 $('start').onclick=()=>{if(finished)reset();running=true;paused=false;showStartup();keys={};$('overlay').style.display='none';update();};
 function setPause(value){paused=value;keys={};$('manual').hidden=true;$('overlay').style.display=value?'grid':'none';$('start').textContent='RESUME SHIFT';if(value)document.exitPointerLock?.()}
 function manual(){if(!running||finished)return;const open=$('manual').hidden;$('manual').hidden=!open;paused=open;keys={};if(open)document.exitPointerLock?.()}
 $('closemanual').onclick=manual;
-document.addEventListener('keydown',e=>{if($('commission') || $('driver-workbench')?.open || e.target.matches?.('input, textarea, select, [contenteditable]'))return;if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD'].includes(e.code))route=[];if(e.repeat)return;if(e.code==='KeyI'&&!paused){inspectIndex=(inspectIndex+1)%4;inspectTRB()}if(e.code==='KeyO'&&!paused){inspectRing=Object.keys(ringData)[(Object.keys(ringData).indexOf(inspectRing)+1)%3];inspectTRB()}if(e.code==='KeyF')repairCycle();if(e.code==='KeyE')interact();if(e.code==='KeyG')navigate();if(e.code==='Tab')manual();if(e.code==='Escape'&&running&&!finished){if(!$('manual').hidden){$('manual').hidden=true;setPause(true)}else setPause(!paused)}});
+document.addEventListener('keydown',e=>{if($('commission') && e.code==='Enter' && !e.repeat && !e.target.matches?.('input, textarea, select, [contenteditable]')){e.preventDefault();$('commission').querySelector('.current-action:not(:disabled)')?.click();return}if($('commission') || $('driver-workbench')?.open || e.target.matches?.('input, textarea, select, [contenteditable]'))return;if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code))e.preventDefault();keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD'].includes(e.code))route=[];if(e.repeat)return;if(e.code==='KeyI'&&!paused){inspectIndex=(inspectIndex+1)%4;inspectTRB()}if(e.code==='KeyO'&&!paused){inspectRing=Object.keys(ringData)[(Object.keys(ringData).indexOf(inspectRing)+1)%3];inspectTRB()}if(e.code==='KeyF')repairCycle();if(e.code==='KeyC'&&!paused&&!$('code-workbench').hidden)$('code-workbench').click();if(e.code==='KeyB')ringDoorbell();if(e.code==='KeyH')handleCompletion();if(e.code==='KeyE')interact();if(e.code==='KeyG')navigate();if(e.code==='Tab')manual();if(e.code==='Escape'&&running&&!finished){if(!$('manual').hidden){$('manual').hidden=true;setPause(true)}else setPause(!paused)}});
 document.addEventListener('keyup',e=>keys[e.code]=false);window.addEventListener('blur',()=>{if(running&&!finished&&!$('driver-workbench')?.open)setPause(true)});let drag=false;renderer.domElement.onmousedown=()=>drag=true;window.onmouseup=()=>drag=false;window.addEventListener('mousemove',e=>{if(paused)return;if(document.pointerLockElement||drag){yaw-=e.movementX*.0025;pitch=Math.max(-1.2,Math.min(1.2,pitch-e.movementY*.0025))}});
 sun.shadow.autoUpdate = false;
 sun.shadow.needsUpdate = true;
-camera.rotation.order='YXZ';const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.12);elapsed+=dt;if(!paused){updateFreightYard(elapsed);tickJob(dt);if(route.length){const [x,z]=route[0],dx=x-position.x,dz=z-position.z,d=Math.hypot(dx,dz),travel=Math.min(d,dt*8);if(d<.15){route.shift()}else{const desired=Math.atan2(-dx,-dz);const delta=desired-yaw;yaw+=Math.atan2(Math.sin(delta),Math.cos(delta))*(1-Math.exp(-8*dt));pitch*=Math.exp(-8*dt);move(dx/d*travel,dz/d*travel)}if(!route.length)message('At the station. Press E to operate.')}else{yaw+=((keys.ArrowLeft?1:0)-(keys.ArrowRight?1:0))*dt*1.6;pitch=Math.max(-1.2,Math.min(1.2,pitch+((keys.ArrowUp?1:0)-(keys.ArrowDown?1:0))*dt));const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=(keys.ShiftLeft?7:4)*dt/Math.max(1,Math.hypot(f,s));move((-Math.sin(yaw)*f+Math.cos(yaw)*s)*speed,(-Math.cos(yaw)*f-Math.sin(yaw)*s)*speed)}}camera.position.copy(position);camera.rotation.set(pitch,yaw,0);near=null;let nearest=3.5;for(const s of stations){const dist=Math.hypot(s.x-position.x,s.z-position.z);if(dist<nearest){near=s;nearest=dist}s.light.material.emissiveIntensity=s.id===missions[step][0]?1.5+Math.sin(elapsed*3)*.6:.2}const target=stations.find(s=>s.id===missions[step][0]);$('target').textContent=near?.id===target.id?`[E] ${target.name}`:`◇ ${target.name} · ${Math.round(Math.hypot(target.x-position.x,target.z-position.z))} m`;updateNextAction(target);$('location').textContent=`BAY 04 / ${Math.round(position.x)}, ${Math.round(position.z)}`;for(const p of parcels)p.label.quaternion.copy(camera.quaternion);renderer.render(scene,camera)}window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)};update();frame();
+camera.rotation.order='YXZ';const clock=new THREE.Clock();function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.12);elapsed+=dt;if(!paused){updateFreightYard(elapsed);tickJob(dt);if(route.length){const [x,z]=route[0],dx=x-position.x,dz=z-position.z,d=Math.hypot(dx,dz),travel=Math.min(d,dt*8);if(d<.15){route.shift()}else{const desired=Math.atan2(-dx,-dz);const delta=desired-yaw;yaw+=Math.atan2(Math.sin(delta),Math.cos(delta))*(1-Math.exp(-8*dt));pitch*=Math.exp(-8*dt);move(dx/d*travel,dz/d*travel)}if(!route.length)message(job?.irqPending?'At the station. IRQ pending: press H.':job?.phase==='queued'?'At the station. Press B to write the doorbell.':'At the station. Press E to operate.')}else{yaw+=((keys.ArrowLeft?1:0)-(keys.ArrowRight?1:0))*dt*1.6;pitch=Math.max(-1.2,Math.min(1.2,pitch+((keys.ArrowUp?1:0)-(keys.ArrowDown?1:0))*dt));const f=(keys.KeyW?1:0)-(keys.KeyS?1:0),s=(keys.KeyD?1:0)-(keys.KeyA?1:0),speed=(keys.ShiftLeft?7:4)*dt/Math.max(1,Math.hypot(f,s));move((-Math.sin(yaw)*f+Math.cos(yaw)*s)*speed,(-Math.cos(yaw)*f-Math.sin(yaw)*s)*speed)}}camera.position.copy(position);camera.rotation.set(pitch,yaw,0);near=null;let nearest=3.5;for(const s of stations){const dist=Math.hypot(s.x-position.x,s.z-position.z);if(dist<nearest){near=s;nearest=dist}s.light.material.emissiveIntensity=s.id===missions[step][0]?1.5+Math.sin(elapsed*3)*.6:.2}const target=stations.find(s=>s.id===missions[step][0]);$('target').textContent=near?.id===target.id?`[E] ${target.name}`:`◇ ${target.name} · ${Math.round(Math.hypot(target.x-position.x,target.z-position.z))} m`;updateNextAction(target);$('location').textContent=`BAY 04 / ${Math.round(position.x)}, ${Math.round(position.z)}`;for(const p of parcels)p.label.quaternion.copy(camera.quaternion);renderer.render(scene,camera)}window.onresize=()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)};update();frame();
 
 // Commissioning is a teaching abstraction: register writes are grouped into actions.
 const startup = new ControllerStartup();
@@ -158,7 +214,7 @@ function showStartup(){
    const target = stations.find(station => station.id === missions[step][0]);
    updateNextAction(target);
    $('guide').focus({preventScroll: true});
-   message('控制器已启动。请点击左上角「前往」开始工位任务。');
+   message('控制器已启动。按 G 前往根端口，或用 WASD 自行移动。');
   }
   return;
  }
@@ -167,7 +223,7 @@ function showStartup(){
  if(!panel){panel=document.createElement('div');panel.id='commission';document.body.append(panel);}
  panel.replaceChildren();const heading=document.createElement('h2');heading.textContent='1 · 启动控制器 / Commission the xHC';panel.append(heading);
  const instruction = document.createElement('p');
- instruction.textContent = '使用默认地址，依次点击金色按钮。完成配置后 Run 才可用。';
+ instruction.textContent = '使用默认地址，按 Enter 执行当前步骤，也可以点击金色按钮。完成配置后 Run 才可用。';
  const actions = document.createElement('div');
  actions.className = 'commission-actions';
  const status = document.createElement('p');
@@ -205,7 +261,7 @@ function showStartup(){
  updateControls();
  panel.append(instruction, status, actions);
  for(const field of Object.keys(ControllerStartup.defaults)){const label=document.createElement('label');const suffix=['MaxSlotsEn','RCS','PageSize'].includes(field)?' value':' DMA address';label.textContent=field+suffix;const input=document.createElement('input');input.setAttribute('aria-label',field+suffix);input.value=startup.inputs[field];input.oninput=()=>{startup.inputs[field]=input.value;updateControls()};label.append(input);panel.append(label,document.createElement('br'));}
- const note=document.createElement('p');note.textContent='DCBAAP / command ring / ERST table: 64-byte alignment. ERDP register supports16-byte alignment; this commissioning profile starts at its64-byte-aligned Event Ring segment base. Controller capability: MaxSlots=8, PAGESIZE bitmap=1 (4096 bytes), Max Scratchpad Buffers=2. Programming DCBAAP allocates and zeroes new page-aligned scratchpads, preserves existing valid pages, and installs their array and DCBAA[0]. A real MaxSlotsEn+1-entry DCBAA initializes unused slot pointers to0 and preserves existing slot entries on register rewrites. Configure MaxSlotsEn=1..8 and RCS=0/1. Teaching profile: ERSTSZ1, one16-TRB (256-byte) Event Ring segment, new bytes/Cycle bits0 and initial hardware CCS1; polling, no interrupts. ERST entries reference the allocated segment, with size16 and reserved0. Set CRCR allocates four zero-initialized TRBs (64 bytes), with unowned Cycle0 versus initial consumer RCS1. Run checks both command memory and the Event table/buffer; rewriting preserves valid existing DMA bytes. RCS initializes the command ring consumer cycle; enumeration uses a fresh cycle-1 ring. Invalid addresses are rejected by this trainer before register encoding.';panel.append(note);
+ const note=document.createElement('p');note.textContent='DCBAAP / command ring / ERST table: 64-byte alignment. ERDP register supports16-byte alignment; this commissioning profile starts at its64-byte-aligned Event Ring segment base. Controller capability: MaxSlots=8, PAGESIZE bitmap=1 (4096 bytes), Max Scratchpad Buffers=2. Programming DCBAAP allocates and zeroes new page-aligned scratchpads, preserves existing valid pages, and installs their array and DCBAA[0]. A real MaxSlotsEn+1-entry DCBAA initializes unused slot pointers to0 and preserves existing slot entries on register rewrites. Configure MaxSlotsEn=1..8 and RCS=0/1. Teaching profile: ERSTSZ1, one16-TRB (256-byte) Event Ring segment, new bytes/Cycle bits0 and initial hardware CCS1; Commissioning validates memory with IRQs disabled; the subsequent enumeration mission models IRQ delivery separately. ERST entries reference the allocated segment, with size16 and reserved0. Set CRCR allocates four zero-initialized TRBs (64 bytes), with unowned Cycle0 versus initial consumer RCS1. Run checks both command memory and the Event table/buffer; rewriting preserves valid existing DMA bytes. RCS initializes the command ring consumer cycle; enumeration uses a fresh cycle-1 ring. Invalid addresses are rejected by this trainer before register encoding.';panel.append(note);
  const details=document.createElement('p');details.textContent=startup.status();panel.append(details);
 
  const powerNote=document.createElement('p');powerNote.textContent=`§4.23.2 halted-controller laboratory: SSS=${startup.sss} RSS=${startup.rss} SRE=${startup.sre}. Simulated Core Well power and CSS/CRS; no active endpoints. Preserve scratchpad bytes between save and restore.`;panel.append(powerNote);

@@ -9,10 +9,10 @@ const driverPrograms = {
   explanation: '只有写 PORTSC 才会提交 PR 请求。模拟器在写入后完成重置，读回观察 PED。'
  },
  cmd: {
-  fault: 'ring_doorbell();\nqueue_command();\npoll_event();',
-  repair: 'queue_command();\nring_doorbell();\npoll_event();',
-  operations: ['queue_command', 'ring_doorbell', 'poll_event'],
-  explanation: '先排队，再敲 Doorbell 0 唤醒控制器。轮询事件本身不会执行命令。'
+  fault: 'ring_doorbell();\nqueue_command();\nhandle_irq();',
+  repair: 'queue_command();\nring_doorbell();\nhandle_irq();',
+  operations: ['queue_command', 'ring_doorbell', 'handle_irq'],
+  explanation: '先排队，再敲 Doorbell 0 唤醒控制器。xHC 写入 Event Ring 并发出中断；驱动在 IRQ 处理程序中读取 Command Completion 并推进 ERDP。'
  },
  event: {
   fault: 'check_cycle();\nread_event();',
@@ -47,7 +47,7 @@ function runDriverProgram(kind, source) {
 
  const state = {
   resetPrepared:false, portEnabled:false, portObserved:false,
-  queued:false, commandEvent:false, commandObserved:false,
+  queued:false, irqPending:false, commandEvent:false, commandObserved:false,
   checked:false, readOrdered:false, eventType:null,
   trbsWritten:false, trbsVisible:false, cyclePublished:false, publishedPayload:false, transferEvent:false
  };
@@ -63,12 +63,16 @@ function runDriverProgram(kind, source) {
   },
   queue_command() { state.queued = true; return 'Command Ring 已入队 Enable Slot'; },
   ring_doorbell() {
-   state.commandEvent ||= state.queued;
-   return state.commandEvent ? 'xHC 消费命令 → 产生 Command Completion' : '门铃唤醒时 Command Ring 为空';
+   if (!state.queued) return '门铃唤醒时 Command Ring 为空';
+   state.queued = false;
+   state.commandEvent = state.irqPending = true;
+   return 'xHC 消费命令 → 写入 Command Completion TRB → 发出 IRQ';
   },
-  poll_event() {
-   state.commandObserved = state.commandEvent;
-   return state.commandObserved ? '读到 Command Completion：Success' : 'Event Ring 没有命令完成事件';
+  handle_irq() {
+   if (!state.irqPending) return '没有 IRQ，处理程序未进入';
+   state.irqPending = state.commandEvent = false;
+   state.commandObserved = true;
+   return '驱动收到 IRQ → 从 Event Ring 读取 Command Completion：Success → 推进 ERDP';
   },
   check_cycle() { state.checked = true; return '事件 Cycle 与 CCS 匹配'; },
   read_barrier() { state.readOrdered = state.checked; return '约束 Cycle 检查后的字段读取'; },
