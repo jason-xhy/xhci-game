@@ -224,6 +224,15 @@ function panelHardware(x,y,z){
   flangeBolt(x+end*.545,y-.2,z+.085,.023);
  }
 }
+function controlLens(x,y,z,radius,depth,material) {
+ const lens = new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,depth,16),material);
+ lens.rotation.x = Math.PI/2;
+ lens.position.set(x,y,z);
+ lens.castShadow = lens.receiveShadow = true;
+ scene.add(lens);
+ return lens;
+}
+
 function stationDisplay(x, y, z) {
  const canvas = document.createElement('canvas');
  canvas.width = 384;
@@ -236,18 +245,23 @@ function stationDisplay(x, y, z) {
  display.position.set(x, y, z);
  scene.add(display);
  let previous;
- return function draw(label, color) {
-  if (label === previous) return;
-  previous = label;
+ return function draw(label, color, action = '') {
+  const state = label + '|' + color + '|' + action;
+  if (state === previous) return;
+  previous = state;
   const ink = '#' + new THREE.Color(color).getHexString();
   context.fillStyle = '#101b20';
   context.fillRect(0, 0, 384, 128);
   context.fillStyle = ink;
   context.fillRect(0, 0, 8, 128);
-  context.font = '18px monospace';
-  context.fillText('HOST CONTROL / STATUS', 24, 30);
-  context.font = 'bold 35px monospace';
-  context.fillText(label, 24, 82, 340);
+  context.font = 'bold 32px monospace';
+  context.fillText(label, 22, action ? 49 : 75, 342);
+  if (action) {
+   context.fillStyle = '#dfebe9';
+   context.font = 'bold 26px monospace';
+   context.fillText(action, 22, 97, 342);
+   context.fillStyle = ink;
+  }
   context.globalAlpha = .14;
   for (let row = 0; row < 128; row += 4) context.fillRect(8, row, 376, 1);
   context.globalAlpha = 1;
@@ -265,6 +279,7 @@ const displayStates = {
 
 function station(id,name,x,z,color){
  const finish = cabinetFinishes[id] ?? dark;
+ let control;
  foldedBox(x,.96,z,1.6,1.68,1.2,.045,finish);
  solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
@@ -282,7 +297,14 @@ function station(id,name,x,z,color){
   socket(x+.24,1,z+.785,0x657e86);
   box(x-.96,.90,z+.66,.17,.22,.16,connectorMetal);
   cable([[x-.94,.88,z+.69],[x-1.04,.68,z+.77],[x-1.18,.38,z+.74],[x-1.16,.10,z+.62],[x-.94,.055,z+.35]],.038,conduitRubber);
-  sign('USB2',x,.79,z+.774,'#d6d3ab',.36);
+  foldedBox(x,.76,z+.695,.68,.12,.082,.014,footRubber);
+  sign('USB2 / RESET',x,.76,z+.75,'#d6d3ab',.64);
+  foldedBox(x-.98,.17,z+.46,.31,.17,.31,.022,connectorMetal);
+  for (const height of [.33,.62]) {
+   foldedBox(x-.99,height,z+.71,.12,.042,.10,.012,stripeMetal);
+  }
+  control = controlLens(x+.48,.99,z+.825,.053,.025,
+   new THREE.MeshStandardMaterial({color:0x819a60,emissive:0xa6c88c,emissiveIntensity:.1,roughness:.42}));
  } else if(id==='event'){
   for(const dx of [-.58,.58])box(x+dx,1.67,z-.36,.34,.47,.68,enamel);
  } else if(id==='transfer'){
@@ -293,19 +315,33 @@ function station(id,name,x,z,color){
    flangeBolt(x+side*.66,1.04,z+.826,.024);
   }
   for(let i=0;i<3;i++){
-   socket(x-.38+i*.38,1.02,z+.79,0x77c9cb);
+   const socketX = x-.41+i*.41;
+   const socketY = 1.04-i*.025;
+   const socketZ = z+.83-i*.025;
+   foldedBox(socketX,socketY,socketZ-.075,.352,.225,.105,.014,stripeMetal);
+   socket(socketX,socketY,socketZ,0x77c9cb);
    const outlet = z+.50-i*.31;
    box(x+.847,.86,outlet,.10,.16,.14,connectorMetal);
    cable([[x+.89,.86,outlet],[x+1.02,.82,outlet],[x+1.24,.55,outlet],[x+1.42,.26,outlet-.4],[x+1.57,.19,z-1.45-i*.11]],.038,conduitRubber);
-   sign(['SETUP','DATA','STATUS'][i],x-.38+i*.38,.855,z+.785,'#9fd8db',.33);
+   sign(['SETUP','DATA','STATUS'][i],socketX,.842,z+.823,'#b8e5e7',.39);
+  }
+  foldedBox(x-.71,1.31,z+.707,.27,.19,.124,.025,footRubber);
+  controlLens(x-.71,1.31,z+.783,.066,.04,connectorMetal);
+  control = controlLens(x-.71,1.31,z+.81,.045,.028,
+   new THREE.MeshStandardMaterial({color:0x49868d,emissive:0xa5e6ed,emissiveIntensity:.12,roughness:.48}));
+  sign('B / EP0',x-.71,1.19,z+.8,'#a4dbe4',.30);
+  for (const offset of [.35,.04,-.27]) {
+   foldedBox(x+1.04,.77,z+offset,.089,.11,.056,.013,stripeMetal);
   }
  } else if(id==='cmd'){
   foldedBox(x,.99,z+.625,1.44,.48,.178,.033,panelSeam);
   foldedBox(x,.99,z+.73,1.34,.405,.085,.019,enamel);
   foldedBox(x+.24,1.025,z+.791,.37,.26,.12,.024,connectorMetal);
   foldedBox(x+.24,1.025,z+.86,.31,.21,.045,.014,insulation);
-  foldedBox(x+.24,1.025,z+.901,.23,.135,.055,.018,brass);
-  sign('DB 0',x+.24,1.02,z+.932,'#f0ce9a',.215);
+  controlLens(x+.24,1.025,z+.903,.092,.058,connectorMetal);
+  control = controlLens(x+.24,1.025,z+.935,.063,.053,
+   new THREE.MeshStandardMaterial({color:0xb68137,emissive:0xe6ad58,emissiveIntensity:.12,roughness:.48}));
+  sign('B / DB 0',x+.24,.873,z+.836,'#ffcf89',.36);
   flangeBolt(x+.08,1.103,z+.853,.027);
   flangeBolt(x+.40,.945,z+.853,.027);
   foldedBox(x+.54,.96,z+.81,.145,.31,.19,.023,stripeMetal);
@@ -353,7 +389,7 @@ function station(id,name,x,z,color){
    }
   }
  }
- stations.push({id, name, x, z, light, screen, display, approach});
+ stations.push({id, name, x, z, light, screen, display, approach, control});
 }
 station('port','ROOT PORT / USB2',-9,-23,0xc6bf91);
 station('cmd','HOST COMMAND QUEUE',-9,-5,0xe6ad58);
@@ -369,6 +405,7 @@ const workNeutral = new THREE.Color(0xf2e2d4);
 let lastLitStation;
 let lastLitPhase;
 let lastDeparture;
+let lastSignalStep;
 const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
@@ -377,10 +414,11 @@ function showStationSignal(target) {
  const phase = job?.phase;
  const stationId = job ? missions[job.source][0] : target.id;
  const departure = running && step > 0 && !job && near?.id !== stationId ? near?.id : undefined;
- if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture) return;
+ if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture && step === lastSignalStep) return;
  lastLitStation = stationId;
  lastLitPhase = phase;
  lastDeparture = departure;
+ lastSignalStep = step;
  const signal = stationSignals[phase];
  const active = stations.find(station => station.id === stationId);
  for (const station of stations) {
@@ -392,9 +430,32 @@ function showStationSignal(target) {
   station.screen.emissiveIntensity = selected ? .30 : .12;
   station.approach.emissive.set(color);
   station.approach.emissiveIntensity = selected ? .68 : 0;
-  if (selected) station.display(displayStates[phase] ?? 'OPERATE HERE',color);
-  else if (station.id === departure) station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0);
-  else station.display('STANDBY',0x75888d);
+  if (station.control) {
+   const activeControl = station.id === 'port' ? step > 0 : selected && phase === 'queued';
+   station.control.material.emissiveIntensity = activeControl ? .72 : .12;
+   if (station.id === 'cmd') {
+    station.control.position.z = selected && phase === 'submitted' ? station.z+.919 : station.z+.935;
+   }
+  }
+  if (selected && job) {
+   const action = {
+    queued: job.ring === 'cmd' ? 'B  DOORBELL 0' : 'B  SLOT 1 / EP0',
+    submitted: job.name,
+    returning: 'WAIT FOR IRQ',
+    ready: 'H  READ EVENT',
+    stalled: 'R  INSPECT RING'
+   }[phase];
+   station.display(phase === 'queued' ? job.name.toUpperCase() : displayStates[phase],color,action);
+  } else if (selected) {
+   const command = submissions[step]?.name;
+   const action = {port:'E  RESET USB2',ctx:'E  PREPARE CONTEXT',exit:'E  CLOCK OUT'}[stationId];
+   station.display(command?.toUpperCase() ?? 'OPERATE HERE',color,
+    command ? 'E  QUEUE TRB' : action);
+  } else if (station.id === departure) {
+   station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0,station.id === 'port' ? 'USB2 PORT READY' : '');
+  } else if (station.id === 'port' && step > 0) {
+   station.display('USB2 PORT READY',0xb7d6a6);
+  } else station.display('STANDBY',0x75888d);
  }
  workLamp.position.set(active.x-.30, 1.96, active.z+1.24);
  workLamp.color.set(signal?.color ?? active.light.material.color).lerp(workNeutral,.55);
@@ -565,6 +626,7 @@ function holdFaultParcel() {
    parcel.o.visible = parcel.label.visible = true;
    placeParcel(parcel,cycleStopProgress);
    parcel.o.material.color?.set(0xff744e);
+   parcel.label.position.y = 2.13;
   } else {
    stageParcel(parcel);
   }
@@ -719,7 +781,7 @@ function updateNextAction(target) {
 $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
-function reset(){$('journey').hidden=false;$('quick-start').hidden=false;document.dispatchEvent(new Event('shift:reset'));$('overlay').querySelector('h3').textContent='FIRST SHIFT';$('overlay').querySelector('p').textContent='让一台 USB2 设备从接入走到可用。跟随 Command、Transfer 和 Event 三条环完成第一次枚举。';$('start').textContent='手动启动控制器';startup.reset();startupFeedback='';step=0;serial=0;job=null;finished=false;inspectRing='cmd';inspectIndex=0;keys={};near=null;clearParcels();history.length=0;ringFields.clear();$('log').textContent='';for(const r of Object.values(ringData)){r.enqueue=r.dequeue=r.enq=r.deq=0;r.pcs=r.ccs=1;r.entries.fill(null)}position.set(...startPosition);yaw=pitch=0;route=[];message('New shift. Inspect the USB2 root port.');update()}
+function reset(){document.body?.classList.remove('yard-ring-review');$('journey').hidden=false;$('quick-start').hidden=false;document.dispatchEvent(new Event('shift:reset'));$('overlay').querySelector('h3').textContent='FIRST SHIFT';$('overlay').querySelector('p').textContent='让一台 USB2 设备从接入走到可用。跟随 Command、Transfer 和 Event 三条环完成第一次枚举。';$('start').textContent='手动启动控制器';startup.reset();startupFeedback='';step=0;serial=0;job=null;finished=false;inspectRing='cmd';inspectIndex=0;keys={};near=null;clearParcels();history.length=0;ringFields.clear();$('log').textContent='';for(const r of Object.values(ringData)){r.enqueue=r.dequeue=r.enq=r.deq=0;r.pcs=r.ccs=1;r.entries.fill(null)}position.set(...startPosition);yaw=pitch=0;route=[];message('New shift. Inspect the USB2 root port.');update()}
 function beginShift() {
  running = true;
  paused = false;
@@ -769,6 +831,14 @@ document.addEventListener('keydown', event => {
  if (event.code !== 'KeyV' || event.repeat || !running || paused || !startup.ready) return;
  if ($('driver-workbench')?.open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
  document.body.classList.toggle('yard-scene-only');
+ document.body.classList.remove('yard-ring-review');
+});
+document.addEventListener('keydown', event => {
+ if (event.code !== 'KeyR' || event.repeat || !running || paused || !startup.ready) return;
+ if ($('driver-workbench')?.open || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
+ if (!document.body.classList.contains('yard-scene-only')) return;
+ const opening = document.body.classList.toggle('yard-ring-review');
+ if (opening) document.exitPointerLock?.();
 });
 document.addEventListener('keydown',e=>{if($('commission') && e.code==='Enter' && !e.repeat && !e.target.matches?.('input, textarea, select, [contenteditable]')){e.preventDefault();$('commission').querySelector('.current-action:not(:disabled)')?.click();return}if($('commission') || $('driver-workbench')?.open || e.target.matches?.('input, textarea, select, [contenteditable]'))return;if(e.code==='Escape'&&!$('manual').hidden){manual();return;}if(paused&&e.code!=='Escape')return;if(['Tab','ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)&&!paused)e.preventDefault();keys[e.code]=true;if(['KeyW','KeyA','KeyS','KeyD'].includes(e.code))route=[];if(e.repeat)return;if(e.code==='KeyI'&&!paused)nextEntry();if(e.code==='KeyO'&&!paused)nextRing();if(e.code==='KeyF')repairCycle();if(e.code==='KeyC'&&!paused&&!$('code-workbench').hidden)$('code-workbench').click();if(e.code==='KeyB')ringDoorbell();if(e.code==='KeyH')handleCompletion();if(e.code==='KeyE')interact();if(e.code==='KeyG')navigate();if(e.code==='Tab')manual();if(e.code==='Escape'&&running&&!finished){if(!$('manual').hidden){$('manual').hidden=true;setPause(true)}else setPause(!paused)}});
 document.addEventListener('keyup',e=>keys[e.code]=false);window.addEventListener('blur',()=>{if(running&&!finished&&!$('driver-workbench')?.open)setPause(true)});let drag=false;renderer.domElement.onmousedown=()=>drag=true;window.onmouseup=()=>drag=false;window.addEventListener('mousemove',e=>{if(paused)return;if(document.pointerLockElement||drag){yaw-=e.movementX*.0025;pitch=Math.max(-1.2,Math.min(1.2,pitch-e.movementY*.0025))}});

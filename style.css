@@ -179,3 +179,22 @@ body:has(#overlay:not([style*="display: none"])) #chapter-labs > button,
 .yard-scene-only #hud,
 .yard-scene-only #chapter-labs {visibility:hidden}
 .yard-scene-only:has(#overlay:not([style*="display: none"])) #chapter-labs {visibility:visible}
+
+#ring-review-keys {display:none}
+.yard-scene-only.yard-ring-review #hud aside {
+ display:block;
+ visibility:visible;
+ width:min(345px,calc(100vw - 32px));
+ top:24px;
+ right:16px;
+ background:#0c1315f2;
+}
+.yard-scene-only.yard-ring-review #ring-review-keys {
+ display:block;
+ margin-top:8px;
+ letter-spacing:0;
+}
+.yard-scene-only.yard-ring-review #message {
+ visibility:visible;
+ bottom:24px;
+}
