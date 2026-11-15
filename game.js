@@ -271,24 +271,28 @@ function stationDisplay(x, y, z, width = .82, height = .255) {
  display.position.set(x, y, z);
  scene.add(display);
  let previous;
- function draw(label, color, action = '') {
-  const state = label + '|' + color + '|' + action;
+ function draw(label, color, action = '', detail = '') {
+  const state = [label,color,action,detail].join('|');
   if (state === previous && display.userData.lines?.length) return;
   previous = state;
-  display.userData.lines = [label,action];
+  display.userData.lines = detail ? [label,action,detail] : [label,action];
   const ink = '#' + new THREE.Color(color).getHexString();
   context.fillStyle = '#101b20';
   context.fillRect(0, 0, 384, 128);
   context.fillStyle = ink;
   context.fillRect(0, 0, 8, 128);
-  context.font = 'bold 32px monospace';
-  context.fillText(label, 22, action ? 49 : 75, 342);
+  context.font = detail ? 'bold 29px monospace' : 'bold 32px monospace';
+  context.fillText(label, 22, detail ? 35 : action ? 49 : 75, 342);
   if (action) {
    context.fillStyle = '#dfebe9';
    context.font = 'bold 26px monospace';
-   context.fillText(action, 22, 97, 342);
-   context.fillStyle = ink;
+   context.fillText(action, 22, detail ? 72 : 97, 342);
   }
+  if (detail) {
+   context.font = 'bold 24px monospace';
+   context.fillText(detail, 22, 108, 342);
+  }
+  context.fillStyle = ink;
   context.globalAlpha = .14;
   for (let row = 0; row < 128; row += 4) context.fillRect(8, row, 376, 1);
   context.globalAlpha = 1;
@@ -458,12 +462,28 @@ let lastLitStation;
 let lastLitPhase;
 let lastDeparture;
 let lastSignalStep;
+let lastCycleDiagnosticKey;
 const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
 };
-function showRingReceipt(station,eventStatus) {
+function showRingReceipt(station,eventStatus,diagnosis) {
  if (!station.ringReceipt) return;
+ if (station.id==='transfer' && diagnosis) {
+  station.ringReceipt.visible = true;
+  const ring = diagnosticRingLabels[diagnosis.ring];
+  if (diagnosis.phase==='repaired') {
+   station.receiptDisplay('CYCLE REPAIRED',0xa5e3ed,
+    `${ring} DEQ ${diagnosis.deq} · C${diagnosis.cycle}→${diagnosis.ccs}`,'CONTROLLER RESUMED');
+   return;
+  }
+  const selected = diagnosticRingLabels[diagnosis.selectedRing];
+  const selection = diagnosis.selectedCycle===null ? 'EMPTY' : `C${diagnosis.selectedCycle}`;
+  const feedback = {'wrong-ring':'WRONG RING · ','wrong-entry':'WRONG ENTRY · '}[diagnosis.feedback] ?? '';
+  station.receiptDisplay(`${ring} DEQ ${diagnosis.deq} · C${diagnosis.cycle} / CCS${diagnosis.ccs}`,0xff866b,
+   `SEL ${selected}[${diagnosis.selectedIndex}] · ${selection}`,feedback+'R DETAIL');
+  return;
+ }
  let receipt = lastRingReceipts.get(station.id);
  const pending = station.id==='event' && ['posted','ready'].includes(eventStatus.phase);
  if (pending) receipt = eventStatus.entry;
@@ -488,7 +508,11 @@ function showStationSignal(target) {
  const phase = job?.phase;
  const stationId = job ? missions[job.source][0] : target.id;
  const departure = running && step > 0 && !job && near?.id !== stationId ? near?.id : undefined;
- if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture && step === lastSignalStep) return;
+ const diagnosis = cycleDiagnosticStatus();
+ const diagnosticKey = diagnosis ? Object.values(diagnosis).join('|') : '';
+ if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture &&
+     step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey) return;
+ lastCycleDiagnosticKey = diagnosticKey;
  lastLitStation = stationId;
  lastLitPhase = phase;
  lastDeparture = departure;
@@ -516,7 +540,7 @@ function showStationSignal(target) {
     station.control.position.z = selected && phase === 'submitted' ? station.z+.919 : station.z+.935;
    }
   }
-  showRingReceipt(station,eventStatus);
+  showRingReceipt(station,eventStatus,diagnosis);
   if (eventMode) {
    const label = {posted:'EVENT POSTED',ready:'IRQ READY',read:'DRIVER READ'}[eventStatus.phase];
    const action = {posted:'WAIT FOR IRQ',ready:'H READ EVENT · R RINGS',read:eventCode.toUpperCase()}[eventStatus.phase];
@@ -527,7 +551,7 @@ function showStationSignal(target) {
     submitted: job.name,
     returning: 'WAIT FOR IRQ',
     ready: 'H READ EVENT · R RINGS',
-    stalled: 'R  INSPECT RING'
+    stalled: 'O RING · I ENTRY · F FIX'
    }[phase];
    station.display(phase === 'queued' ? job.name.toUpperCase() : displayStates[phase],color,action);
   } else if (selected) {
@@ -752,17 +776,51 @@ const stationSignals = {
 
 const ringFields=new Map();
 let inspectRing='cmd',inspectIndex=0;
+const diagnosticRingLabels = {cmd:'CMD',transfer:'XFER',event:'EVENT'};
+let cycleDiagnosticFeedback = '';
+
+function cycleDiagnosticStatus() {
+ if (job?.phase==='stalled') {
+  const ring = ringData[job.ring];
+  return {
+   phase:'stalled',ring:job.ring,deq:ring.deq,cycle:ring.entries[ring.deq]?.cycle ?? null,ccs:ring.ccs,
+   selectedRing:inspectRing,selectedIndex:inspectIndex,
+   selectedCycle:ringData[inspectRing].entries[inspectIndex]?.cycle ?? null,
+   feedback:cycleDiagnosticFeedback
+  };
+ }
+ if (job?.phase==='submitted' && job.cycleRepair &&
+     job.time-job.cycleRepair.time < cycleRepairWindow) {
+  const {ring,deq,cycle,ccs} = job.cycleRepair;
+  return {phase:'repaired',ring,deq,cycle,ccs};
+ }
+ return null;
+}
+
 function nextRing() {
  const rings = Object.keys(ringData);
  inspectRing = rings[(rings.indexOf(inspectRing)+1)%rings.length];
+ cycleDiagnosticFeedback = '';
  inspectTRB();
 }
 function nextEntry() {
  inspectIndex = (inspectIndex+1)%ringData[inspectRing].size;
+ cycleDiagnosticFeedback = '';
  inspectTRB();
 }
 function inspectTRB(){updateRings();const r=ringData[inspectRing],t=r.entries[inspectIndex];message(`${inspectRing}[${inspectIndex}] ${t?`${t.type} | Cycle=${t.cycle} | job=${t.id} | Slot=${t.slot} EP=${t.endpoint} | ${t.pointer}`:'empty'} | consumer head CCS=${r.ccs}. [I] next entry [O] next ring [F] publish expected Cycle at stalled head.`)}
-function repairCycle(){if(paused||!job||job.phase!=='stalled')return;const r=ringData[job.ring];if(inspectRing!==job.ring||inspectIndex!==r.deq){message('当前条目不是卡住的消费头。比对 Transfer Ring 的 DEQ 与 CCS，再选择该条目。');return}r.entries[r.deq].cycle=r.ccs;
+function repairCycle(){
+ if (paused || job?.phase!=='stalled') return;
+ const r = ringData[job.ring];
+ if (inspectRing!==job.ring || inspectIndex!==r.deq) {
+  cycleDiagnosticFeedback = inspectRing!==job.ring ? 'wrong-ring' : 'wrong-entry';
+  message('当前条目不是卡住的消费头。比对 Transfer Ring 的 DEQ 与 CCS，再选择该条目。');
+  return;
+ }
+ const head = r.entries[r.deq];
+ job.cycleRepair = {ring:job.ring,deq:r.deq,cycle:head.cycle,ccs:r.ccs,time:job.time};
+ cycleDiagnosticFeedback = '';
+ head.cycle = r.ccs;
  const repaired = parcels.find(parcel => parcel.index === job.consumed);
  repaired?.setState('repaired');
  job.repairedHead = job.consumed;
@@ -872,6 +930,7 @@ function clearParcels() {
 
 // The Cycle check halts the parcel at the exposed end of the feed tray.
 const cycleStopProgress = .06;
+const cycleRepairWindow = .90;
 
 function moveSubmittedParcels() {
  for (const parcel of parcels) {
@@ -886,7 +945,7 @@ function moveSubmittedParcels() {
   }
   parcel.o.visible = true;
   parcel.label.visible = parcel.index === job.consumed;
-  const repaired = job.repairedHead === parcel.index && job.time < .72;
+  const repaired = job.repairedHead === parcel.index && job.time-job.cycleRepair?.time < cycleRepairWindow;
   parcel.setState(repaired ? 'repaired' : 'moving');
   const progress = offsetTime/2;
   const repairedProgress = job.repairedHead === parcel.index ? cycleStopProgress+progress*(1-cycleStopProgress) : progress;
@@ -895,6 +954,7 @@ function moveSubmittedParcels() {
 }
 
 function holdFaultParcel() {
+ cycleDiagnosticFeedback = '';
  for (const parcel of parcels) {
   if (parcel.index < job.consumed) {
    parcel.o.visible = parcel.label.visible = false;
@@ -1151,6 +1211,7 @@ $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
 function reset(){
+ cycleDiagnosticFeedback = '';
  lastRingReceipts.clear();
  shiftRootPort = shiftSlotId = contextDraft = addressContext = null;
  endpointDescriptorBuffer = observedEndpointDescriptor = endpointDraft = configureContext = configuredEndpoint = null;

@@ -15,7 +15,31 @@ for(const index of [1,4,6,9,11]){
   if(JSON.stringify(parcels.map(parcel=>parcel.o.position.coordinates))===staged)throw Error('doorbell did not move queued TRB');
  }if(!job||step!==index+1)throw Error('submission');
  near={id:'event',name:'events'};interact();if(step!==index+1)throw Error('premature collection');
- paused=false;if(index===6){tickJob(.1);if(job.phase!=='stalled'||ringData.transfer.dequeue!==0)throw Error('missing stall');const before=ringData.event.enqueue;const held=JSON.stringify(parcels[0].o.position.coordinates);tickJob(20);if(ringData.event.enqueue!==before||JSON.stringify(parcels[0].o.position.coordinates)!==held)throw Error('premature event or movement during fault');repairCycle();if(job.phase!=='stalled')throw Error('repaired an unselected entry');nextRing();repairCycle();}for(let i=0;i<120;i++)tickJob(.1);if(job.phase!=='ready'||eventDeskStatus().phase!=='ready')throw Error('completion');
+ paused=false;
+ if(index===6){
+  tickJob(.1);
+  const initial=cycleDiagnosticStatus();
+  if(initial?.phase!=='stalled'||initial.deq!==0||initial.cycle!==0||initial.ccs!==1)throw Error('missing diagnostic');
+  const before=ringData.event.enqueue;
+  const held=JSON.stringify(parcels[0].o.position.coordinates);
+  tickJob(20);
+  if(ringData.event.enqueue!==before||JSON.stringify(parcels[0].o.position.coordinates)!==held)throw Error('premature event or movement during fault');
+  repairCycle();
+  if(job.phase!=='stalled'||cycleDiagnosticStatus().feedback!=='wrong-ring')throw Error('wrong ring repair accepted');
+  nextRing();
+  nextEntry();
+  repairCycle();
+  const wrongEntry=cycleDiagnosticStatus();
+  if(wrongEntry.selectedRing!=='transfer'||wrongEntry.selectedIndex!==1||wrongEntry.feedback!=='wrong-entry')throw Error('wrong entry not reflected');
+  for(let count=0;count<3;count++)nextEntry();
+  if(cycleDiagnosticStatus().feedback)throw Error('previous diagnostic not cleared on selection');
+  const original=parcels[0].o;
+  repairCycle();
+  const result=cycleDiagnosticStatus();
+  if(result?.phase!=='repaired'||result.cycle!==0||result.ccs!==1||parcels[0].o!==original)throw Error('incorrect repair receipt');
+  if(ringData.event.enqueue!==before||ringData.transfer.entries[0].cycle!==1)throw Error('repair skips real consumption');
+ }
+ for(let i=0;i<120;i++)tickJob(.1);if(job.phase!=='ready'||eventDeskStatus().phase!=='ready'||cycleDiagnosticStatus()!==null)throw Error('completion');
  const eventHead=ringData.event.deq;
  const origin=missions[job.source][0];
  interact();
