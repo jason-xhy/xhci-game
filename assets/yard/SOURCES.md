@@ -14,3 +14,5 @@ The color maps use the sRGB color space. OpenGL normal and roughness maps are li
 [Freight Station](https://polyhaven.com/a/freight_station) from Poly Haven is a CC0 HDR panorama. The downloadable environment fill is a 256×128 little-endian RGBA16F pack averaged in linear light. The brightest upper-hemisphere azimuth is aligned with the existing yard sun. Its intensity is scaled and capped for use beside the directional light.
 
 The sky overlay uses the high-sky portion of the same Freight Station panorama. The photo was tone-mapped to sRGB and aligned with the yard light azimuth. The sampled upper sky omits photographed terrain and structures. A feathered mask leaves the game's procedural sun and horizon visible.
+
+[Electric Counterbalance Forklift](https://www.innerscene.com/tools/library/3d-parts/electric-counterbalance-forklift-7acc0547) is an Innerscene original released under CC0. The original metre-scale geometry was baked and packed into five material groups. The yard uses the model without external textures and adjusts the roughness of the paint, steel, chrome and rubber.

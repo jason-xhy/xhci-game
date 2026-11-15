@@ -1,0 +1,10 @@
+Electric counterbalance forklift
+Original model by Innerscene
+https://www.innerscene.com/tools/library/3d-parts/electric-counterbalance-forklift-7acc0547
+
+Published under CC0 1.0 Universal
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Geometry transforms were baked, five materials were grouped and the
+lengthwise bounds were recentered. The yard assigns material-specific
+roughness and uses the source model's metre scale.
