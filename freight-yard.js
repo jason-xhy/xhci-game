@@ -171,6 +171,71 @@ function buildYardPerimeter(asphalt, asphaltReady) {
  addBatch('Far yard foundations',footings,mat(0x47413a));
 }
 
+function buildEastServiceCanopy() {
+ const originX = 12.0;
+ const originZ = -14.0;
+ const group = new THREE.Group();
+ group.name = 'East service canopy';
+ group.position.set(originX,0,originZ);
+ const frame = [], roof = [], feet = [], services = [], trim = [];
+ const tilt = .065;
+ const roofY = x => 2.75 + x*tilt;
+
+ // The west side stays open to the aisle; the equipment sits on the east.
+ feet.push([0,.014,0,3.12,.027,4.32]);
+ for (const x of [-1.28,1.28]) for (const z of [-1.66,1.66]) {
+  feet.push([x,.057,z,.385,.112,.41]);
+  trim.push([x,.12,z,.246,.033,.26]);
+  const height = roofY(x)-.232;
+  frame.push([x,height/2+.126,z,.15,height,.16]);
+  for (const offset of [-.101,.101]) trim.push([x+offset,.151,z,.031,.029,.031]);
+  solid.push({x:originX+x,z:originZ+z,w:.36,d:.36});
+ }
+ for (const x of [-1.28,1.28]) frame.push([x,roofY(x)-.155,0,.14,.17,3.7]);
+ for (const z of [-1.72,0,1.72]) frame.push([0,2.61,z,2.79,.12,.13,tilt]);
+ roof.push([0,roofY(0),0,3.13,.083,4.08,tilt]);
+ for (let x=-1.44; x<=1.45; x+=.24) {
+  trim.push([x,roofY(x)+.043,0,.030,.020,4.03,tilt]);
+ }
+ for (const z of [-2.02,2.02]) roof.push([0,2.718,z,3.14,.095,.058,tilt]);
+ for (const x of [-1.55,1.55]) roof.push([x,roofY(x)-.029,0,.065,.096,4.12]);
+
+ // Incoming conduit and a passive service cabinet connect the roof to the transfer equipment.
+ services.push([1.12,.66,-.13,.55,1.19,1.56], [1.12,.13,-.13,.62,.15,1.63]);
+ frame.push([.824,.70,-.13,.033,1.04,1.37]);
+ trim.push([.80,.70,.29,.046,.089,.12]);
+ for (const z of [-.60,-.38,-.16]) trim.push([.80,1.04,z,.028,.047,.11]);
+ for (const x of [.91,1.20]) {
+  services.push([x,.29,1.68,.063,.067,2.38], [x,.46,2.87,.066,.36,.066]);
+  trim.push([x,.294,1.68,.092,.091,.08], [x,.294,2.34,.091,.091,.08]);
+ }
+ solid.push({x:originX+1.12,z:originZ-.13,w:.44,d:.94});
+
+ const block = new THREE.BoxGeometry(1,1,1);
+ const transform = new THREE.Object3D();
+ const batches = [
+  [frame,new THREE.MeshStandardMaterial({color:0x344749,roughness:.66,metalness:.43})],
+  [roof,new THREE.MeshStandardMaterial({color:0x536763,roughness:.74,metalness:.24})],
+  [feet,new THREE.MeshStandardMaterial({color:0x56534c,roughness:.92})],
+  [services,new THREE.MeshStandardMaterial({color:0x655c41,roughness:.72,metalness:.30})],
+  [trim,new THREE.MeshStandardMaterial({color:0x85816d,roughness:.52,metalness:.53})]
+ ];
+ for (const [parts,finish] of batches) {
+  const instances = new THREE.InstancedMesh(block,finish,parts.length);
+  instances.castShadow = instances.receiveShadow = true;
+  for (const [index,[x,y,z,w,h,d,slope=0]] of parts.entries()) {
+   transform.position.set(x,y,z);
+   transform.scale.set(w,h,d);
+   transform.rotation.z = slope;
+   transform.updateMatrix();
+   instances.setMatrixAt(index,transform.matrix);
+  }
+  instances.computeBoundingSphere();
+  group.add(instances);
+ }
+ scene.add(group);
+}
+
 function buildFreightYard() {
  const sky = new THREE.Color(0x929d9d);
  scene.background = sky;
@@ -192,6 +257,7 @@ function buildFreightYard() {
 
  box(0,-.19,0,68,.38,68,asphalt);
  buildYardPerimeter(asphalt,asphaltReady);
+ buildEastServiceCanopy();
  for (let x=-30; x<=30; x+=5) box(x,.004,0,.035,.006,63,tar);
  for (let z=-30; z<=30; z+=6) box(0,.007,z,63,.006,.042,tar);
  buildYardWear();

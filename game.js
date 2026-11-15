@@ -6,7 +6,7 @@ function mat(c,metal=.2){return new THREE.MeshStandardMaterial({color:c,roughnes
 rust.map=surface('#785d48');
 steel.map=surface('#4c5853');
 buildFreightYard();
-function belt(cx,cz,color,label){const m=mat(color);for(const z of [cz-2,cz+2]){box(cx,1,z,13,.45,1.5,dark,true);box(cx,1.35,z-.8,13,.15,.12,m);box(cx,1.35,z+.8,13,.15,.12,m);for(let x=cx-6;x<=cx+6;x+=.5){const r=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.45,8),steel);r.rotation.x=Math.PI/2;r.position.set(x,1.27,z);scene.add(r)}for(const x of [cx-5,cx+5])box(x,.5,z,.22,1,.3,rust)}for(const x of [cx-6.2,cx+6.2])box(x,1,cz,1,.4,4,dark,true);sign(label,cx,3.25,cz,'#'+color.toString(16),4.6);}belt(-17,-9,0xe6ad58,'01 / COMMAND RING');belt(17,-9,0x67ccd3,'02 / EP0 TRANSFER');belt(0,17,0x82c591,'03 / EVENT RING');
+function belt(cx,cz,color,label,signHeight=3.25){const m=mat(color);for(const z of [cz-2,cz+2]){box(cx,1,z,13,.45,1.5,dark,true);box(cx,1.35,z-.8,13,.15,.12,m);box(cx,1.35,z+.8,13,.15,.12,m);for(let x=cx-6;x<=cx+6;x+=.5){const r=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.45,8),steel);r.rotation.x=Math.PI/2;r.position.set(x,1.27,z);scene.add(r)}for(const x of [cx-5,cx+5])box(x,.5,z,.22,1,.3,rust)}for(const x of [cx-6.2,cx+6.2])box(x,1,cz,1,.4,4,dark,true);sign(label,cx,signHeight,cz,'#'+color.toString(16),4.6);}belt(-17,-9,0xe6ad58,'01 / COMMAND RING');belt(17,-9,0x67ccd3,'02 / EP0 TRANSFER',5.55);belt(0,17,0x82c591,'03 / EVENT RING');
 // Scrapes are concentrated along the service door’s edges and fasteners.
 function servicePaint() {
  const canvas = document.createElement('canvas');
