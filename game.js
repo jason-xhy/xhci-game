@@ -6,7 +6,62 @@ function mat(c,metal=.2){return new THREE.MeshStandardMaterial({color:c,roughnes
 rust.map=surface('#785d48');
 steel.map=surface('#4c5853');
 buildFreightYard();
-function belt(cx,cz,color,label,signHeight=3.25){const m=mat(color);for(const z of [cz-2,cz+2]){box(cx,1,z,13,.45,1.5,dark,true);box(cx,1.35,z-.8,13,.15,.12,m);box(cx,1.35,z+.8,13,.15,.12,m);for(let x=cx-6;x<=cx+6;x+=.5){const r=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.45,8),steel);r.rotation.x=Math.PI/2;r.position.set(x,1.27,z);scene.add(r)}for(const x of [cx-5,cx+5])box(x,.5,z,.22,1,.3,rust)}for(const x of [cx-6.2,cx+6.2])box(x,1,cz,1,.4,4,dark,true);sign(label,cx,signHeight,cz,'#'+color.toString(16),4.6);}belt(-17,-9,0xe6ad58,'01 / COMMAND RING');belt(17,-9,0x67ccd3,'02 / EP0 TRANSFER',5.55);belt(0,17,0x82c591,'03 / EVENT RING');
+function mountRingIdentification(cx,cz,signY,color,label) {
+ const assembly = new THREE.Group();
+ assembly.name = 'Mounted ring sign / ' + label;
+ assembly.position.set(cx,0,cz);
+ // Lower the cantilever behind both text sightlines. Short risers under
+ // the panel reach the lower rail without crossing either lettering face.
+ const beamY = signY-1.18;
+ const postZ = -2.60;
+ const plateWidth = 4.60;
+ const plateHeight = plateWidth/4;
+ const faces = sign(label,cx,signY,cz,'#'+color.toString(16),plateWidth);
+ assembly.add(faces);
+ faces.position.set(0,signY,.061);
+ faces.children[0].position.z = -.122;
+
+ const structure = [[0,signY,0,4.68,1.22,.108]];
+ const hardware = [];
+ for (const x of [-1.63,1.63]) {
+  // Both feet share the existing north return-lane footprint.
+  structure.push([x,.084,postZ,.40,.168,.37]);
+  structure.push([x,(beamY+.14)/2,postZ,.149,beamY-.14,.173]);
+  structure.push([x,beamY,postZ/2,.152,.144,2.71]);
+  structure.push([x,beamY+.343,0,.149,.686,.109]);
+  const braceRun = 1.79, braceRise = .62;
+  structure.push([x,beamY-.34,postZ+braceRun/2,.085,.094,Math.hypot(braceRun,braceRise),
+   -Math.atan2(braceRise,braceRun)]);
+  hardware.push([x,signY-.51,0,.25,.19,.113]);
+  hardware.push([x,beamY+.087,postZ,.218,.038,.229]);
+  for (const offset of [-.14,.14]) {
+   hardware.push([x+offset,.179,postZ+.121,.039,.031,.039]);
+  }
+ }
+ for (const side of [-1,1]) {
+  hardware.push([0,signY+side*(plateHeight/2+.017),0,4.70,.035,.129]);
+  hardware.push([side*2.331,signY,0,.042,1.18,.129]);
+ }
+
+ const geometry = new THREE.BoxGeometry(1,1,1);
+ const pose = new THREE.Object3D();
+ const trim = new THREE.MeshStandardMaterial({color:0x8a8d7e,roughness:.57,metalness:.43});
+ for (const [parts,material] of [[structure,steel],[hardware,trim]]) {
+  const mesh = new THREE.InstancedMesh(geometry,material,parts.length);
+  mesh.castShadow = mesh.receiveShadow = true;
+  for (const [index,[x,y,z,w,h,d,tilt=0]] of parts.entries()) {
+   pose.position.set(x,y,z);
+   pose.scale.set(w,h,d);
+   pose.rotation.x = tilt;
+   pose.updateMatrix();
+   mesh.setMatrixAt(index,pose.matrix);
+  }
+  mesh.computeBoundingSphere();
+  assembly.add(mesh);
+ }
+ scene.add(assembly);
+}
+function belt(cx,cz,color,label,signHeight=3.25){const m=mat(color);for(const z of [cz-2,cz+2]){box(cx,1,z,13,.45,1.5,dark,true);box(cx,1.35,z-.8,13,.15,.12,m);box(cx,1.35,z+.8,13,.15,.12,m);for(let x=cx-6;x<=cx+6;x+=.5){const r=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.45,8),steel);r.rotation.x=Math.PI/2;r.position.set(x,1.27,z);scene.add(r)}for(const x of [cx-5,cx+5])box(x,.5,z,.22,1,.3,rust)}for(const x of [cx-6.2,cx+6.2])box(x,1,cz,1,.4,4,dark,true);mountRingIdentification(cx,cz,signHeight,color,label);}belt(-17,-9,0xe6ad58,'01 / COMMAND RING');belt(17,-9,0x67ccd3,'02 / EP0 TRANSFER',5.55);belt(0,17,0x82c591,'03 / EVENT RING');
 // Scrapes are concentrated along the service door’s edges and fasteners.
 function servicePaint() {
  const canvas = document.createElement('canvas');
