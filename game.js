@@ -29,11 +29,34 @@ function servicePaint() {
  texture.colorSpace = THREE.SRGBColorSpace;
  return texture;
 }
+function brushedFinish() {
+ const canvas = document.createElement('canvas');
+ canvas.width = 128;
+ canvas.height = 64;
+ const context = canvas.getContext('2d');
+ context.fillStyle = '#a9a9a9';
+ context.fillRect(0,0,128,64);
+ for (let y=0; y<64; y++) {
+  context.fillStyle = y%7 < 2 ? '#969696' : '#b3b3b3';
+  context.fillRect(y*23%31,y,80+y*13%18,1);
+ }
+ return new THREE.CanvasTexture(canvas);
+}
+
 const enamel = new THREE.MeshStandardMaterial({
  color:0xaab8b5, map:servicePaint(), roughness:.57, metalness:.17
 });
 const brass = new THREE.MeshStandardMaterial({color:0xb89462, roughness:.42, metalness:.7});
-const connectorMetal = new THREE.MeshStandardMaterial({color:0xaab4b4, roughness:.35, metalness:.72});
+const brushed = brushedFinish();
+const connectorMetal = new THREE.MeshStandardMaterial({
+ color:0xc4cbd0, roughness:.48, roughnessMap:brushed,
+ bumpMap:brushed, bumpScale:.002, metalness:.57
+});
+const cabinetFinishes = {
+ port: new THREE.MeshStandardMaterial({color:0x58746b, roughness:.67, metalness:.19}),
+ cmd: new THREE.MeshStandardMaterial({color:0x66645b, roughness:.60, metalness:.23}),
+ transfer: new THREE.MeshStandardMaterial({color:0x4f687d, roughness:.64, metalness:.21})
+};
 const insulation = new THREE.MeshStandardMaterial({color:0x18252b, roughness:.88});
 const panelSeam = new THREE.MeshStandardMaterial({color:0x273431, roughness:.72});
 const footRubber = new THREE.MeshStandardMaterial({color:0x181d1d,roughness:1});
@@ -47,28 +70,95 @@ function cable(points, radius, material) {
  lead.receiveShadow = true;
  scene.add(lead);
 }
+const cabinetBolts = [];
 function flangeBolt(x,y,z,radius=.035) {
- const bolt = new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,.026,6),stripeMetal);
- bolt.rotation.x = Math.PI/2;
- bolt.position.set(x,y,z);
- bolt.castShadow = true;
- scene.add(bolt);
+ cabinetBolts.push({x,y,z,radius,depth:.026,facingFront:true});
 }
+
+function buildCabinetBolts() {
+ const geometry = new THREE.CylinderGeometry(1,1,1,6);
+ const bolts = new THREE.InstancedMesh(geometry,stripeMetal,cabinetBolts.length);
+ bolts.castShadow = bolts.receiveShadow = true;
+ const part = new THREE.Object3D();
+ cabinetBolts.forEach((bolt,index) => {
+  part.position.set(bolt.x,bolt.y,bolt.z);
+  part.rotation.set(bolt.facingFront ? Math.PI/2 : 0,0,0);
+  part.scale.set(bolt.radius,bolt.depth,bolt.radius);
+  part.updateMatrix();
+  bolts.setMatrixAt(index,part.matrix);
+ });
+ scene.add(bolts);
+}
+
+function makeContactShadow() {
+ const canvas = document.createElement('canvas');
+ canvas.width = canvas.height = 64;
+ const context = canvas.getContext('2d');
+ const shadow = context.createRadialGradient(32,32,6,32,32,30);
+ shadow.addColorStop(0,'#121515a6');
+ shadow.addColorStop(.65,'#12151555');
+ shadow.addColorStop(1,'#12151500');
+ context.fillStyle = shadow;
+ context.fillRect(0,0,64,64);
+ return new THREE.MeshBasicMaterial({
+  map:new THREE.CanvasTexture(canvas), transparent:true, depthWrite:false,
+  polygonOffset:true, polygonOffsetFactor:-1, polygonOffsetUnits:-1
+ });
+}
+const contactShadow = makeContactShadow();
 function boltedFeet(x,z) {
+ const shadow = new THREE.Mesh(new THREE.PlaneGeometry(2.49,1.95),contactShadow);
+ shadow.position.set(x,.019,z+.03);
+ shadow.rotation.x = -Math.PI/2;
+ scene.add(shadow);
  for (const dx of [-.6,.6]){
   box(x+dx,.045,z,.32,.09,1.34,footRubber);
   box(x+dx,.105,z,.27,.05,1.28,stripeMetal);
   for (const dz of [-.53,.53]){
-   const bolt = new THREE.Mesh(new THREE.CylinderGeometry(.038,.038,.037,6),stripeMetal);
-   bolt.position.set(x+dx,.143,z+dz);
-   bolt.castShadow = bolt.receiveShadow = true;
-   scene.add(bolt);
+   cabinetBolts.push({x:x+dx,y:.143,z:z+dz,radius:.038,depth:.037,facingFront:false});
   }
  }
 }
 
+function foldedBox(x,y,z,width,height,depth,bevel,material) {
+ const profile = new THREE.Shape();
+ const left = -width/2+bevel, right = width/2-bevel;
+ const bottom = -height/2+bevel, top = height/2-bevel;
+ profile.moveTo(left,bottom);
+ profile.lineTo(right,bottom);
+ profile.lineTo(right,top);
+ profile.lineTo(left,top);
+ profile.closePath();
+ const geometry = new THREE.ExtrudeGeometry(profile,{
+  depth:depth-2*bevel,bevelEnabled:true,bevelThickness:bevel,bevelSize:bevel,
+  bevelSegments:1,steps:1,curveSegments:1
+ });
+ geometry.translate(0,0,-depth/2+bevel);
+ const part = new THREE.Mesh(geometry,material);
+ part.position.set(x,y,z);
+ part.castShadow = part.receiveShadow = true;
+ scene.add(part);
+ return part;
+}
+
+function serviceDoor(x,z,finish) {
+ const width = 1.43;
+ foldedBox(x,.425,z+.61,width,.49,.034,.012,footRubber);
+ foldedBox(x,.435,z+.641,1.34,.43,.045,.014,finish);
+ // A pull handle and shadowed slots identify the removable lower service cover.
+ foldedBox(x,.582,z+.68,.45,.045,.035,.008,stripeMetal);
+ for (const dx of [-.20,.20])box(x+dx,.581,z+.66,.050,.043,.043,insulation);
+ box(x,.377,z+.666,1.10,.137,.02,insulation);
+ const louvers = new THREE.InstancedMesh(new THREE.BoxGeometry(.126,.034,.028),stripeMetal,8);
+ const offset = new THREE.Matrix4();
+ for(let i=0;i<8;i++)louvers.setMatrixAt(i,offset.makeTranslation(x-.49+i*.14,.381,z+.685));
+ louvers.castShadow = louvers.receiveShadow = true;
+ scene.add(louvers);
+}
+
 function socket(x, y, z, color) {
  const flangeHeight = .19;
+ foldedBox(x,y,z-.045,.305,.184,.089,.013,footRubber);
  // The face has a real lip, recessed insulating well, and visible contact tongue.
  for (const edge of [-1,1]) {
   box(x+edge*.136,y,z,.028,flangeHeight,.065,connectorMetal);
@@ -130,10 +220,11 @@ const displayStates = {
 };
 
 function station(id,name,x,z,color){
- box(x,.96,z,1.6,1.68,1.2,dark,true);
+ const finish = cabinetFinishes[id] ?? dark;
+ foldedBox(x,.96,z,1.6,1.68,1.2,.045,finish);
+ solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
- box(x,.41,z+.606,1.43,.51,.03,panelSeam);
- box(x,.415,z+.625,1.33,.43,.022,enamel);
+ serviceDoor(x,z,finish);
  if(id==='ctx'){
   box(x,1.02,z,2.58,.13,1.4,steel);
   for(const dx of [-1.12,1.12])box(x+dx,.47,z,.12,1,.22,enamel);
@@ -141,55 +232,63 @@ function station(id,name,x,z,color){
  } else if(id==='port'){
   box(x-.94,.62,z,.26,1.24,.47,enamel);
   box(x-.94,1.33,z,.38,.16,.51,brass);
-  panelHardware(x,.95,z+.61);
-  socket(x-.24,1,z+.715,0x84bad2);
-  socket(x+.24,1,z+.715,0x657e86);
+  foldedBox(x,.96,z+.616,1.32,.56,.15,.024,connectorMetal);
+  panelHardware(x,.95,z+.68);
+  socket(x-.24,1,z+.785,0x84bad2);
+  socket(x+.24,1,z+.785,0x657e86);
   box(x-.96,.90,z+.66,.17,.22,.16,connectorMetal);
   cable([[x-.94,.88,z+.69],[x-1.04,.68,z+.77],[x-1.18,.38,z+.74],[x-1.16,.10,z+.62],[x-.94,.055,z+.35]],.038,conduitRubber);
-  sign('USB2',x,.79,z+.705,'#d6d3ab',.36);
+  sign('USB2',x,.79,z+.774,'#d6d3ab',.36);
  } else if(id==='event'){
   for(const dx of [-.58,.58])box(x+dx,1.67,z-.36,.34,.47,.68,enamel);
  } else if(id==='transfer'){
-  panelHardware(x,.96,z+.61);
+  foldedBox(x,.99,z+.641,1.48,.46,.18,.027,connectorMetal);
+  foldedBox(x,.99,z+.729,1.39,.36,.075,.019,insulation);
+  for (const side of [-1,1]) {
+   foldedBox(x+side*.66,.97,z+.76,.066,.24,.105,.012,stripeMetal);
+   flangeBolt(x+side*.66,1.04,z+.826,.024);
+  }
   for(let i=0;i<3;i++){
-   socket(x-.38+i*.38,1.02,z+.715,0x77c9cb);
+   socket(x-.38+i*.38,1.02,z+.79,0x77c9cb);
    const outlet = z+.50-i*.31;
    box(x+.847,.86,outlet,.10,.16,.14,connectorMetal);
    cable([[x+.89,.86,outlet],[x+1.02,.82,outlet],[x+1.24,.55,outlet],[x+1.42,.26,outlet-.4],[x+1.57,.19,z-1.45-i*.11]],.038,conduitRubber);
-   sign(['SETUP','DATA','STATUS'][i],x-.38+i*.38,.85,z+.705,'#9fd8db',.33);
+   sign(['SETUP','DATA','STATUS'][i],x-.38+i*.38,.855,z+.785,'#9fd8db',.33);
   }
  } else if(id==='cmd'){
-  panelHardware(x,.96,z+.61);
-  box(x+.24,1.025,z+.721,.37,.26,.12,connectorMetal);
-  box(x+.24,1.025,z+.791,.31,.21,.043,insulation);
-  box(x+.24,1.025,z+.83,.23,.135,.062,brass);
-  sign('DB 0',x+.24,1.02,z+.862,'#f0ce9a',.215);
-  flangeBolt(x+.08,1.103,z+.792,.027);
-  flangeBolt(x+.40,.945,z+.792,.027);
-  box(x+.54,.96,z+.72,.145,.31,.19,stripeMetal);
-  box(x+.54,1.07,z+.77,.072,.17,.13,insulation);
-  for(let i=0;i<3;i++)box(x-.44+i*.14,1.01,z+.68,.052,.12,.045,insulation);
+  foldedBox(x,.99,z+.625,1.44,.48,.178,.033,panelSeam);
+  foldedBox(x,.99,z+.73,1.34,.405,.085,.019,enamel);
+  foldedBox(x+.24,1.025,z+.791,.37,.26,.12,.024,connectorMetal);
+  foldedBox(x+.24,1.025,z+.86,.31,.21,.045,.014,insulation);
+  foldedBox(x+.24,1.025,z+.901,.23,.135,.055,.018,brass);
+  sign('DB 0',x+.24,1.02,z+.932,'#f0ce9a',.215);
+  flangeBolt(x+.08,1.103,z+.853,.027);
+  flangeBolt(x+.40,.945,z+.853,.027);
+  foldedBox(x+.54,.96,z+.81,.145,.31,.19,.023,stripeMetal);
+  foldedBox(x+.54,1.07,z+.86,.072,.17,.13,.022,insulation);
+  for(let i=0;i<3;i++)foldedBox(x-.44+i*.14,1.01,z+.783,.052,.12,.045,.012,insulation);
  } else if(id==='exit'){
   box(x,2.15,z-.15,.16,.7,.17,steel);
   box(x,2.52,z-.15,.43,.15,.28,brass);
  }
- box(x,1.62,z,.96,.52,1.28,enamel);
- box(x,1.46,z+.66,1.28,.66,.08,steel);
- box(x,1.58,z+.72,.99,.38,.12,dark);
+ foldedBox(x,1.62,z,.96,.52,1.28,.045,finish);
+ foldedBox(x,1.46,z+.658,1.28,.66,.082,.024,connectorMetal);
+ foldedBox(x,1.58,z+.72,.99,.38,.12,.024,footRubber);
  const screen = new THREE.MeshStandardMaterial({
   color:new THREE.Color(color).multiplyScalar(.24), emissive:color,
   emissiveIntensity:.18, roughness:.56
  });
  box(x,1.59,z+.791,.84,.26,.02,screen);
- for(let i=0;i<6;i++)box(x-.51+i*.204,.45,z+.641,.11,.115,.021,panelSeam);
- box(x,.59,z+.652,.42,.045,.035,stripeMetal);
- for(const dx of [-.65,.65])for(const y of [.22,1.2]){
-  const fastener=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.034,6),brass);
-  fastener.rotation.x=Math.PI/2;fastener.position.set(x+dx,y,z+.625);scene.add(fastener);
+ for (const dx of [-.65,.65]) for (const y of [.25,1.23]) {
+  flangeBolt(x+dx,y,z+.649,.035);
  }
  const light = box(x, 1.95, z, .9, .12, .5,
   new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:.3}));
  const signWidth = id === 'port' ? 2.25 : 2.45;
+ for (const offset of [-.37, .37]) {
+  box(x+offset,2.11,z+.51,.07,.52,.085,stripeMetal);
+  box(x+offset,1.895,z+.51,.136,.032,.144,connectorMetal);
+ }
  sign(name, x, 2.38, z+.61, '#' + color.toString(16), signWidth);
  const display = stationDisplay(x, 1.59, z+.804);
  const approach = new THREE.MeshStandardMaterial({
@@ -218,12 +317,20 @@ station('ctx','CONTEXT WORKBENCH',9,-23,0xc6bf91);
 station('transfer','EP0 DISPATCH',9,-5,0x67ccd3);
 station('event','DRIVER IRQ DESK',0,12,0x82c591);
 station('exit','SHIFT CLOCK',0,27,0xc6bf91);
+buildCabinetBolts();
 
 const workLamp = new THREE.PointLight(0xe6ad58, 10, 4.4, 2);
 scene.add(workLamp);
+const workNeutral = new THREE.Color(0xf2e2d4);
+let lastLitStation;
+let lastLitPhase;
 function showStationSignal(target) {
- const signal = stationSignals[job?.phase];
+ const phase = job?.phase;
  const stationId = job ? missions[job.source][0] : target.id;
+ if (stationId === lastLitStation && phase === lastLitPhase) return;
+ lastLitStation = stationId;
+ lastLitPhase = phase;
+ const signal = stationSignals[phase];
  const active = stations.find(station => station.id === stationId);
  for (const station of stations) {
   const selected = active === station;
@@ -234,11 +341,11 @@ function showStationSignal(target) {
   station.screen.emissiveIntensity = selected ? .30 : .12;
   station.approach.emissive.set(color);
   station.approach.emissiveIntensity = selected ? .68 : 0;
-  station.display(selected ? (displayStates[job?.phase] ?? 'OPERATE HERE') : 'STANDBY',
+  station.display(selected ? (displayStates[phase] ?? 'OPERATE HERE') : 'STANDBY',
    selected ? color : 0x75888d);
  }
  workLamp.position.set(active.x-.22, 2.13, active.z+.96);
- workLamp.color.set(signal?.color ?? active.light.material.color);
+ workLamp.color.set(signal?.color ?? active.light.material.color).lerp(workNeutral,.31);
  workLamp.intensity = signal?.power ?? 9;
 }
 const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Host driver: queue Enable Slot (E), then write Doorbell 0 (B).','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
@@ -321,7 +428,7 @@ function updateRings(){
 
 function setParcelPosition(parcel, x, z, height = 1.56) {
  parcel.o.position.set(x,height,z);
- parcel.label.position.set(x,height+.43,z);
+ parcel.label.position.set(x,height+.34,z);
 }
 
 function stageParcel(parcel) {
@@ -355,7 +462,7 @@ function placeParcel(parcel, progress) {
 function spawn(ring,label,index=0) {
  const r = ringData[ring];
  const body = box(0,1.5,0,.54,.32,.36,mat(r.color,.33));
- const tag = sign(label,0,0,0,'#'+r.color.toString(16),1.9);
+ const tag = sign(label,0,0,0,'#'+r.color.toString(16),1.24);
  // Moving TRBs rely on Local light; the static yard shadow map is baked at load.
  body.castShadow = false;
  const parcel = {o:body,label:tag,ring,index};
@@ -377,6 +484,9 @@ function clearParcels() {
  parcels.length = 0;
 }
 
+// The Cycle check halts the parcel at the exposed end of the feed tray.
+const cycleStopProgress = .06;
+
 function moveSubmittedParcels() {
  for (const parcel of parcels) {
   if (parcel.index < job.consumed) {
@@ -390,7 +500,7 @@ function moveSubmittedParcels() {
   }
   parcel.o.visible = parcel.label.visible = true;
   const progress = offsetTime/2;
-  const repairedProgress = job.repairedHead === parcel.index ? .24+progress*.76 : progress;
+  const repairedProgress = job.repairedHead === parcel.index ? cycleStopProgress+progress*(1-cycleStopProgress) : progress;
   placeParcel(parcel,Math.min(repairedProgress,1));
  }
 }
@@ -401,7 +511,7 @@ function holdFaultParcel() {
    parcel.o.visible = parcel.label.visible = false;
   } else if (parcel.index === job.consumed) {
    parcel.o.visible = parcel.label.visible = true;
-   placeParcel(parcel,.24);
+   placeParcel(parcel,cycleStopProgress);
    parcel.o.material.color?.set(0xff744e);
   } else {
    stageParcel(parcel);
@@ -644,14 +754,20 @@ function moveWithKeys(dt) {
 
 function frame() {
  requestAnimationFrame(frame);
- const dt = Math.min(clock.getDelta(),.12);
- elapsed += dt;
+ // Catch up through short steps when rendering stalls. Cap long gaps so
+ // returning to the tab cannot jump the player or a completion far ahead.
+ const frameTime = Math.min(clock.getDelta(), .48);
+ elapsed += frameTime;
  if (!paused) {
   updateFreightYard(elapsed);
-  tickJob(dt);
-  const target = stations.find(station => station.id === missions[step][0]);
-  if (route.length) followRoute(dt, target);
-  else moveWithKeys(dt);
+  const steps = Math.max(1, Math.ceil(frameTime / .06));
+  const dt = frameTime / steps;
+  for (let index = 0; index < steps; index++) {
+   tickJob(dt);
+   const target = stations.find(station => station.id === missions[step][0]);
+   if (route.length) followRoute(dt, target);
+   else moveWithKeys(dt);
+  }
  }
  camera.position.copy(position);
  camera.rotation.set(pitch,yaw,0);
@@ -667,11 +783,13 @@ function frame() {
  const target = stations.find(station => station.id === missions[step][0]);
  showStationSignal(target);
  const signal = stationSignals[job?.phase];
- $('target').textContent = signal?.label ?? (near?.id === target.id
+ const targetLabel = signal?.label ?? (near?.id === target.id
   ? `[E] ${target.name}`
   : `◇ ${target.name} · ${Math.round(Math.hypot(target.x-position.x,target.z-position.z))} m`);
+ if ($('target').textContent !== targetLabel) $('target').textContent = targetLabel;
  updateNextAction(target);
- $('location').textContent = `BAY 04 / ${Math.round(position.x)}, ${Math.round(position.z)}`;
+ const location = `BAY 04 / ${Math.round(position.x)}, ${Math.round(position.z)}`;
+ if ($('location').textContent !== location) $('location').textContent = location;
  for (const parcel of parcels) parcel.label.quaternion.copy(camera.quaternion);
  renderer.render(scene,camera);
 }
