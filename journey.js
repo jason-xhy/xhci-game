@@ -141,6 +141,11 @@
    const bytes = descriptor.bytes.map(byte=>byte.toString(16).padStart(2,'0')).join(' ').toUpperCase();
    root.append(element('p',`${retry}本次描述符 #${descriptor.job}（${bytes}）生成 DCI ${endpoint.dci}。驱动读到 Configure Endpoint 成功后，才向 USB 设备发送 SET_CONFIGURATION。`));
   }
+  const controllerConfig = event.detail?.controllerConfiguration;
+  const usbConfig = event.detail?.usbConfiguration;
+  if (controllerConfig && usbConfig) {
+   root.append(element('p',`本次先由 xHC 应用端点配置，驱动在 IRQ 中读取完成事件 #${controllerConfig.jobId}（${controllerConfig.code}）。随后 USB 设备执行 SET_CONFIGURATION，驱动再读取传输事件 #${usbConfig.jobId}（${usbConfig.code}）。`));
+  }
   show();
   focusFirst();
  }

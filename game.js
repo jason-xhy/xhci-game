@@ -314,6 +314,35 @@ function controlLens(x,y,z,radius,depth,material) {
  return lens;
 }
 
+function buildEp0ConfigurationPair(x,z) {
+ const makeModule = (offset,label,material) => {
+  const center = x+offset;
+  foldedBox(center,1.226,z+.784,.55,.169,.14,.014,material);
+  flangeBolt(center-.254,1.225,z+.854,.013);
+  const readout = stationDisplay(center-.022,1.226,z+.858,.461,.144);
+  const lamp = controlLens(center+.237,1.226,z+.858,.018,.018,
+   new THREE.MeshStandardMaterial({color:0x524433,emissive:0x524433,roughness:.48}));
+  return {readout,lamp,label};
+ };
+ const slot = makeModule(-.31,'XHC SLOT',connectorMetal);
+ const device = makeModule(.31,'USB DEVICE',insulation);
+ cable([[x+.585,1.226,z+.81],[x+.628,1.226,z+.81],[x+.63,1.186,z+.81],
+  [x+.6,1.156,z+.808]],.016,conduitRubber);
+ return {slot,device};
+}
+function updateEp0ConfigurationPair(pair,state) {
+ if (!pair) return;
+ for (const [scope,module] of Object.entries(pair)) {
+  module.readout.mesh.visible = !!state;
+  const configured = state?.[scope] === 'configured';
+  const observed = state?.[scope+'Observed'];
+  const color = configured ? 0x9bd9a4 : 0xe4c78a;
+  module.lamp.material.color.setHex(state ? color : 0x524433);
+  module.lamp.material.emissive.setHex(color);
+  module.lamp.material.emissiveIntensity = state ? (configured ? .53 : .15) : 0;
+  if (state) module.readout(module.label,color,configured ? (observed ? 'CONFIGURED' : 'CONFIGURED · WAIT H') : 'ADDRESSED');
+ }
+}
 function stationDisplay(x, y, z, width = .82, height = .255) {
  const canvas = document.createElement('canvas');
  canvas.width = 384;
@@ -401,7 +430,7 @@ const displayStates = {
 
 function station(id,name,x,z,color){
  const finish = cabinetFinishes[id] ?? dark;
- let control,connectionLens,contextDock;
+ let control,connectionLens,contextDock,configPair;
  foldedBox(x,.96,z,1.6,1.68,1.2,.045,finish);
  solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
@@ -434,6 +463,7 @@ function station(id,name,x,z,color){
  } else if(id==='event'){
   for(const dx of [-.58,.58])box(x+dx,1.67,z-.36,.34,.47,.68,enamel);
  } else if(id==='transfer'){
+  configPair = buildEp0ConfigurationPair(x,z);
   foldedBox(x,.99,z+.641,1.48,.46,.18,.027,connectorMetal);
   foldedBox(x,.99,z+.729,1.39,.36,.075,.019,insulation);
   for (const side of [-1,1]) {
@@ -533,7 +563,7 @@ function station(id,name,x,z,color){
   }
  }
  stations.push({
-  id,name,x,z,light,screen,display,approach,control,connectionLens,contextDock,receiptDisplay,
+  id,name,x,z,light,screen,display,approach,control,connectionLens,contextDock,configPair,receiptDisplay,
   ringReceipt:receiptDisplay?.mesh
  });
 }
@@ -556,6 +586,7 @@ let lastSignalStep;
 let lastCycleDiagnosticKey;
 let lastRootPortPhase;
 let lastContextDockKey;
+let lastEp0ConfigurationKey;
 const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
@@ -627,10 +658,13 @@ function showStationSignal(target) {
  const diagnosticKey = diagnosis ? Object.values(diagnosis).join('|') : '';
  const port = rootPortStatus();
  const dockStatus = contextDockStatus();
+ const ep0Configuration = ep0ConfigurationState();
+ const ep0ConfigurationKey = JSON.stringify(ep0Configuration);
  const dockKey = dockStatus ? [dockStatus.kind,dockStatus.phase,dockStatus.summary].join('|') : '';
  if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture &&
      step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey &&
-     port.phase === lastRootPortPhase && dockKey === lastContextDockKey) return;
+     port.phase === lastRootPortPhase && dockKey === lastContextDockKey && ep0ConfigurationKey === lastEp0ConfigurationKey) return;
+ lastEp0ConfigurationKey = ep0ConfigurationKey;
  lastContextDockKey = dockKey;
  lastRootPortPhase = port.phase;
  lastCycleDiagnosticKey = diagnosticKey;
@@ -671,6 +705,7 @@ function showStationSignal(target) {
   }
   showRingReceipt(station,eventStatus,diagnosis);
   updateContextDock(station.contextDock,dockStatus);
+  updateEp0ConfigurationPair(station.configPair,ep0Configuration);
   if (eventMode) {
    const label = {posted:'EVENT POSTED',ready:'IRQ READY',read:'DRIVER READ'}[eventStatus.phase];
    const action = {posted:'WAIT FOR IRQ',ready:'H READ EVENT · R RINGS',read:eventCode.toUpperCase()}[eventStatus.phase];
@@ -797,11 +832,22 @@ let endpointDraft = null;
 let configureContext = null;
 let configuredEndpoint = null;
 let configureObserved = false;
+let addressObserved = false;
+let usbConfigurationApplied = false;
 let usbConfigurationObserved = false;
 let configureFailure = '';
 let rejectedAddressInput = null;
 let rejectedEndpointInput = null;
 
+function ep0ConfigurationState() {
+ if (!addressObserved) return null;
+ return {
+  slot: configuredEndpoint ? 'configured' : 'addressed',
+  slotObserved: configureObserved,
+  device: usbConfigurationApplied ? 'configured' : 'addressed',
+  deviceObserved: usbConfigurationObserved
+ };
+}
 function contextDockStatus() {
  if (step<3 || !shiftSlotId) return null;
  if (step<8) {
@@ -1051,7 +1097,7 @@ function log(entry) {
 function message(s){$('message').textContent=s}
 const missionArc=[0,1,1,2,3,3,4,4,5,5,5,5,5,5];
 const arcNames=['端口复位','启用 Slot','准备设备上下文','分配地址','读取描述符','配置设备'];
-function update(){const m=missions[step];$('mission-arc').textContent=`02 / 工位实操 · ${missionArc[step]+1}/6 ${arcNames[missionArc[step]]}`;$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${shiftRootPort?.ped?'ENABLED':shiftRootPort?.pr?'RESETTING':'ATTACHED'}\nSLOT ${configuredEndpoint?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${usbConfigurationObserved?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
+function update(){const m=missions[step];$('mission-arc').textContent=`02 / 工位实操 · ${missionArc[step]+1}/6 ${arcNames[missionArc[step]]}`;$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${shiftRootPort?.ped?'ENABLED':shiftRootPort?.pr?'RESETTING':'ATTACHED'}\nSLOT ${configureObserved?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${usbConfigurationObserved?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
 function updateRings(){
  const phase = job?.phase;
  const status = $('controller-status');
@@ -1240,6 +1286,7 @@ function tickJob(dt){
    }
    const result = pushTRB(ringData.event,job.event,job.id);
    result.completionCode = valid ? 'Success' : 'Parameter Error';
+   if (job.source === 11 && valid) usbConfigurationApplied = true;
    if (job.ring === 'cmd') result.commandPointer = job.trbs[0].pointer;
    result.slot = job.trbs[0].slot;
    if (input) result.inputContext = input;
@@ -1301,7 +1348,8 @@ function handleCompletion(){
   endpointDescriptorBuffer = null;
  }
  if (source===9) configureObserved = completion.inputContext === configuredEndpoint;
- if (source===11) usbConfigurationObserved = true;
+ if (source===4) addressObserved = true;
+ if (source===11) usbConfigurationObserved = usbConfigurationApplied;
  message(missions[step][4]);
  advance();
 }
@@ -1313,7 +1361,7 @@ if(submissions[step]){
  if(step===4&&!addressContext){message('Prepare the Input Context before submitting Address Device.');return}
  if(step===9&&!configureContext){message('Prepare the Endpoint Input Context before submitting Configure Endpoint.');return}
  if(step===11&&!configureObserved){message('Read the successful Configure Endpoint completion before submitting SET_CONFIGURATION.');return}
- if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;$('quick-start').hidden=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${successfulCompletions} completion events successfully. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';$('journey').hidden=false;document.dispatchEvent(new CustomEvent('shift:complete',{detail:{addressContext,addressFailure,observedEndpointDescriptor,configuredEndpoint,configureFailure}}));return}advance()}
+ if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;$('quick-start').hidden=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${successfulCompletions} completion events successfully. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';$('journey').hidden=false;document.dispatchEvent(new CustomEvent('shift:complete',{detail:{addressContext,addressFailure,observedEndpointDescriptor,configuredEndpoint,configureFailure,controllerConfiguration:lastRingReceipts.get('cmd'),usbConfiguration:lastRingReceipts.get('transfer')}}));return}advance()}
 const blocked=(x,z)=>solid.some(o=>Math.abs(x-o.x)<o.w&&Math.abs(z-o.z)<o.d);
 function move(dx,dz){const count=Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.15);for(let i=0;i<count;i++){if(!blocked(position.x+dx/count,position.z))position.x+=dx/count;if(!blocked(position.x,position.z+dz/count))position.z+=dz/count}position.x=THREE.MathUtils.clamp(position.x,-30,30);position.z=THREE.MathUtils.clamp(position.z,-30,30)}
 function findStationRoute(start, target) {
@@ -1434,7 +1482,7 @@ function reset(){
  lastRingReceipts.clear();
  shiftRootPort = shiftSlotId = contextDraft = addressContext = null;
  endpointDescriptorBuffer = observedEndpointDescriptor = endpointDraft = configureContext = configuredEndpoint = null;
- configureObserved = usbConfigurationObserved = false;
+ addressObserved = configureObserved = usbConfigurationApplied = usbConfigurationObserved = false;
  successfulCompletions = 0;
  addressFailure = configureFailure = '';
  $('context-workbench').close();
