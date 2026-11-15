@@ -433,6 +433,7 @@ station('ctx','CONTEXT WORKBENCH',9,-23,0xc6bf91);
 station('transfer','EP0 DISPATCH',9,-5,0x67ccd3);
 station('event','DRIVER IRQ DESK',0,12,0x82c591);
 station('exit','SHIFT CLOCK',0,27,0xc6bf91);
+addFixedYardSigns();
 buildCabinetBolts();
 
 const workLamp = new THREE.SpotLight(0xe6ad58, 5, 3.4, .70, .78, 2);

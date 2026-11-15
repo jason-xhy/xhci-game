@@ -157,3 +157,84 @@ function showYardRoute(target) {
   marker.rotation.y = Math.atan2(fromX-toX,fromZ-toZ);
  }
 }
+
+// The outer signs face diagonally into their aisles so both directions
+// can read them before reaching the crossing. Arrows mark the first leg.
+function addFixedYardSigns() {
+ const signs = [
+  {name:'West aisle', x:-7.4, z:-13, yaw:Math.PI/4,
+   left:'COMMAND QUEUE', right:'ROOT PORT'},
+  {name:'Central crossing', x:0, z:-11.65, yaw:0,
+   left:'COMMAND QUEUE', right:'EP0 DISPATCH'},
+  {name:'East aisle', x:7.4, z:-13, yaw:-Math.PI/4,
+   left:'CONTEXT BENCH', right:'EP0 DISPATCH'}
+ ];
+ const frame = new THREE.MeshStandardMaterial({color:0x414642,roughness:.76,metalness:.28});
+ const fasteners = new THREE.MeshStandardMaterial({color:0x766f59,roughness:.55,metalness:.52});
+ const backing = new THREE.BoxGeometry(1.52,.47,.06);
+ const face = new THREE.PlaneGeometry(1.48,.43);
+ const post = new THREE.BoxGeometry(.057,.68,.057);
+ const foot = new THREE.BoxGeometry(.18,.045,.21);
+ const bolt = new THREE.BoxGeometry(.034,.02,.034);
+
+ for (const {name,x,z,yaw,left,right} of signs) {
+  const sign = new THREE.Group();
+  sign.name = 'Fixed route sign / '+name;
+  sign.position.set(x,0,z);
+  sign.rotation.y = yaw;
+
+  function mount(geometry,material,x,y,z) {
+   const mesh = new THREE.Mesh(geometry,material);
+   mesh.position.set(x,y,z);
+   mesh.castShadow = mesh.receiveShadow = true;
+   sign.add(mesh);
+   return mesh;
+  }
+
+  mount(backing,frame,0,.78,0);
+  for (const x of [-.61,.61]) {
+   mount(post,frame,x,.34,0);
+   mount(foot,frame,x,.026,0);
+   for (const z of [-.072,.072]) mount(bolt,fasteners,x,.054,z);
+  }
+  for (const side of [1,-1]) {
+   const material = fixedYardSignFace(side === 1 ? left : right, side === 1 ? right : left);
+   const panel = mount(face,material,0,.78,side*.031);
+   if (side === -1) panel.rotation.y = Math.PI;
+   panel.castShadow = false;
+  }
+  scene.add(sign);
+ }
+}
+
+function fixedYardSignFace(left,right) {
+ const canvas = document.createElement('canvas');
+ canvas.width = 768;
+ canvas.height = 224;
+ const ink = canvas.getContext('2d');
+ ink.fillStyle = '#232f31';
+ ink.fillRect(0,0,768,224);
+ ink.strokeStyle = '#87928a';
+ ink.lineWidth = 4;
+ ink.strokeRect(10,10,748,204);
+ ink.fillStyle = '#586966';
+ ink.fillRect(33,109,702,3);
+ // Small chips near the mounting corners leave the lettering clear.
+ ink.fillStyle = '#a18e6b';
+ for (const [x,y,w,h] of [[14,17,22,4],[23,25,9,3],[743,18,9,5],[15,203,13,4],[729,204,23,3]]) {
+  ink.fillRect(x,y,w,h);
+ }
+ ink.fillStyle = '#fff0c0';
+ ink.font = 'bold 52px monospace';
+ ink.fillText('←',35,87);
+ ink.fillText('→',35,180);
+ ink.font = 'bold 48px monospace';
+ ink.fillText(left,118,85,613);
+ ink.fillText(right,118,178,613);
+ const texture = new THREE.CanvasTexture(canvas);
+ texture.colorSpace = THREE.SRGBColorSpace;
+ return new THREE.MeshStandardMaterial({
+  map:texture,roughness:.68,metalness:.08,
+  emissiveMap:texture,emissive:0xffffff,emissiveIntensity:.19
+ });
+}
