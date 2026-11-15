@@ -1,0 +1,135 @@
+'use strict';
+
+(() => {
+ const root = document.getElementById('journey');
+ const chapters = ['端口复位', '启用 Slot', '准备设备上下文', '分配地址', '读取描述符', '配置设备'];
+ const stages = [
+  ['驱动', '发布 TRB', '驱动将 Enable Slot 写入 Command Ring。此时 xHC 尚未收到通知。'],
+  ['驱动', '写 Doorbell 0', '驱动写门铃，通知 xHC 有新的命令。'],
+  ['xHC', '执行命令', 'xHC 取走命令，分配 Slot ID，并将完成 TRB 写入 Event Ring。'],
+  ['xHC', '发出 IRQ', 'Event Ring 里已有结果；IRQ 通知驱动来取。'],
+  ['驱动', '处理 IRQ', '驱动读取 Command Completion，得到 Success 和 Slot ID，并推进 ERDP。']
+ ];
+ const transferStages = [
+  ['驱动', '发布控制 TD', '驱动在 EP0 Transfer Ring 上发布 GET_DESCRIPTOR 的 Setup、Data、Status TRB。'],
+  ['驱动', '写 EP0 门铃', '驱动写对应 Slot 的门铃，目标是 EP0。'],
+  ['xHC', '执行 USB 传输', 'xHC 消费控制 TD，与设备交换数据，并将 Transfer Event 写入 Event Ring。'],
+  ['xHC', '发出 IRQ', 'Transfer Event 已在环里，IRQ 通知驱动处理。'],
+  ['驱动', '处理 IRQ', '驱动读取 Transfer Event、推进 ERDP，再使用缓冲区里的描述符选择配置。']
+ ];
+ const challenges = [
+  ['Enable Slot 已在 Command Ring。xHC 尚未收到通知。', ['写 Doorbell 0', '直接读完成事件', '写 EP0 门铃'], 0, 'Doorbell 0 通知 xHC 取命令。EP0 门铃用于控制传输。'],
+  ['IRQ 已到达，随后要准备设备上下文。你现在先做什么？', ['猜一个 Slot ID', '读 Command Completion，取得 Slot ID，并推进 ERDP', '提交 SET_CONFIGURATION'], 1, '驱动从完成事件取得 Slot ID，后续才能按该 ID 准备上下文。'],
+  ['已分配地址。你要读取描述符来确定端点配置，走哪条路径？', ['Command Ring → Doorbell 0', '直接读取 Event Ring', 'EP0 Transfer Ring → slot/EP0 门铃 → Transfer Event'], 2, 'GET_DESCRIPTOR 是 EP0 控制传输；端点配置完成后，再经 EP0 发送 SET_CONFIGURATION。']
+ ];
+ document.addEventListener('keydown', event => {
+  if (!root.offsetParent || event.repeat || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
+  const index = Number(event.key) - 1;
+  if (/^[1-3]$/.test(event.key)) root.querySelectorAll('[data-answer]')[index]?.click();
+ });
+ const element = (tag, text, className) => {
+  const node = document.createElement(tag);
+  if (text) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+ };
+ function button(label, action) {
+  const node = element('button', label);
+  node.type = 'button';
+  node.onclick = action;
+  return node;
+ }
+ function track(items) {
+  const list = element('ol', null, 'journey-track');
+  items.forEach(([actor, label]) => {
+   const li = element('li', label);
+   li.prepend(element('small', actor));
+   list.append(li);
+  });
+  return list;
+ }
+ function frame(label, title) {
+  const badge = element('small', label);
+  const heading = element('h2', title);
+  const status = element('p');
+  status.id = 'journey-status';
+  status.setAttribute('aria-live', 'polite');
+  const controls = element('div', null, 'journey-controls');
+  return {badge, heading, status, controls};
+ }
+ function briefing() {
+  const {badge, heading, status, controls} = frame('01 / 全局预演', '从端口上线，到设备可用');
+  const route = track(chapters.map((label, i) => [String(i + 1).padStart(2, '0'), label]));
+  let path = stages;
+  let step = -1;
+  let diagram = track(path);
+  function show() {
+   [...diagram.children].forEach((node,i) => {
+    node.toggleAttribute('data-current', i === step);
+    node.toggleAttribute('data-done', i < step);
+   });
+   status.textContent = step < 0
+    ? '全程有三条环：驱动在 Command Ring 提交命令，在 Transfer Ring 提交传输；xHC 用 Event Ring 交回结果。沿下方走一遍 Enable Slot，看清每次交接是谁在做。'
+    : path[step][2];
+   next.textContent = step < 0 ? (path === stages ? '单步预演 Enable Slot →' : '单步预演 GET_DESCRIPTOR →')
+    : step === path.length - 1 ? '重播往返' : '下一次交接 →';
+  }
+  const next = button('', () => { step = step === path.length - 1 ? -1 : step + 1; show(); });
+  const compare = button('切换到 EP0 传输', () => {
+   path = path === stages ? transferStages : stages;
+   const replacement = track(path);
+   diagram.replaceWith(replacement);
+   diagram = replacement;
+   step = -1;
+   compare.textContent = path === stages ? '切换到 EP0 传输' : '切换到命令';
+   show();
+  });
+  controls.append(next, compare);
+  root.replaceChildren(badge,heading,route,diagram,status,controls);
+  show();
+ }
+ function debrief() {
+  const {badge, heading, status, controls} = frame('03 / 全链路复盘', '换一个视角：下一步该由谁做？');
+  const route = track(chapters.map((label,i) => [String(i + 1).padStart(2, '0'), label]));
+  const prompt = element('p');
+  const keys = element('small', '按 1–3 选择，或用 Tab / Enter。');
+  let index = 0;
+  const focusFirst = () => controls.querySelector('button')?.focus({preventScroll:true});
+  function show() {
+   const question = challenges[index];
+   controls.replaceChildren();
+   status.textContent = '';
+   keys.hidden = !question;
+   [...route.children].forEach((node,i) => {
+    node.toggleAttribute('data-current', i === [1,2,4][index]);
+    node.toggleAttribute('data-done', index === challenges.length);
+   });
+   if (!question) {
+    prompt.textContent = '复盘完成：你已串起命令、IRQ 和 EP0 传输。';
+    status.textContent = '接下来可打开章节实验，观察备用接口、TT 或带宽恢复会改变链路的哪一段。';
+    return;
+   }
+   prompt.textContent = `${index+1}/${challenges.length} · ${question[0]}`;
+   question[1].forEach((choice,i) => {
+    const answer = button(choice, () => {
+     if (i !== question[2]) {
+      status.textContent = '再试一次。' + question[3];
+      return;
+     }
+     status.textContent = '正确。' + question[3];
+     keys.hidden = true;
+    controls.replaceChildren(button('继续 →', () => { index++; show(); focusFirst(); }));
+     focusFirst();
+    });
+    answer.dataset.answer = String(i+1);
+    controls.append(answer);
+   });
+  }
+  root.replaceChildren(badge,heading,route,prompt,keys,controls,status);
+  show();
+  focusFirst();
+ }
+ briefing();
+ document.addEventListener('shift:complete', debrief);
+ document.addEventListener('shift:reset', briefing);
+})();

@@ -136,3 +136,16 @@
 .trb-key{display:block;margin-top:4px;color:#ddbd86}
 .trb-changed{background:#573e21;color:#ffe1a6;box-shadow:inset 0 -1px #e6ad58}
 #lab-directory input{max-width:100%;padding:6px;background:#0b1617;color:#e3f7ef;border:1px solid #6d9a8d}
+#overlay .card{max-height:calc(100dvh - 32px);overflow:auto}
+#journey{margin:16px 0;text-align:left}
+#journey h2{margin:4px 0 10px;font-size:1.2rem}
+.journey-track{list-style:none;padding:0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
+.journey-track li{padding:8px;border:1px solid #52635c;color:#bdc7bc;font-size:.85rem}
+.journey-track li[data-current]{border-color:#eab669;background:#544120;color:#fff0c5}
+.journey-track li[data-done]{border-color:#82c591;color:#bcebd0}
+.journey-track small{display:block;color:inherit;letter-spacing:0;font-size:.75rem}
+.journey-controls{display:flex;gap:6px;flex-wrap:wrap}
+.journey-controls button{font-size:.8rem;padding:7px 10px}
+#journey-status{min-height:2.8em}
+#mission-arc{margin-top:8px;color:#f0c88b;font:11px monospace}
+@media(max-width:600px){.journey-track{grid-template-columns:repeat(2,minmax(0,1fr))}}
