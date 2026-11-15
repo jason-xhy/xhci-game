@@ -102,6 +102,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
    }
    console.log(`PASS mouse step ${index + 1}: ${label}`);
   }
+  await page.waitForFunction(()=>finished);
   assert.equal(await page.locator('#overlay h3').innerText(), 'SHIFT COMPLETE');
   assert.match(await page.locator('#overlay p').first().innerText(), /5 completion events/);
   assert.deepEqual(errors, []);

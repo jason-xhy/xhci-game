@@ -81,6 +81,17 @@ job.trbs[1].cycle^=1;tickJob(5);check(job.phase==='stalled'&&job.consumed===1&&r
 setPause(true);const time=job.time;tickJob(50);check(job.time===time&&job.phase==='returning','pause returning');setPause(false);tickJob(5);tickJob(50);check(ringData.event.enqueue===1,'duplicate completion');near={id:'event'};interact();const count=ringData.event.dequeue;interact();check(ringData.event.dequeue===count,'double collection');
 reset();check(parcels.length===0&&history.length===0&&job===null&&!lastRingReceipts.size&&eventDeskStatus().phase==='idle','restart cleanup');
 paused=false;for(let i=0;i<14;i++){near={id:missions[step][0]};interact();if(i===0)tickRootPortReset(1);if(job?.phase==='queued'){ringDoorbell();tickJob(.1);if(job.phase==='stalled'){nextRing();repairCycle();}tickJob(10);tickJob(5);}}
-check(finished&&paused&&ringData.event.dequeue===5,'full mission');$('start').onclick();check(!finished&&!paused&&step===0&&serial===0&&ringData.event.dequeue===0,'new shift button');check(!observedEndpointDescriptor&&!configuredEndpoint&&!configureObserved&&!usbConfigurationObserved&&successfulCompletions===0,'new shift clears descriptor and completion state');check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','restart overlay heading');setPause(true);check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','pause retained completion heading');
+check(shiftClock?.receipt.count===5&&!finished&&ringData.event.dequeue===5,'clock receives five real completions');
+const originalClock = shiftClock;
+interact();
+check(shiftClock===originalClock,'repeat E does not create a second receipt');
+tickShiftClock(.32);
+check(shiftClock.elapsed===.32&&!finished,'visible receipt precedes recap');
+setPause(true);
+tickShiftClock(10);
+check(shiftClock.elapsed===.32&&!finished,'clock freezes during pause');
+setPause(false);
+tickShiftClock(.7);
+check(finished&&paused&&ringData.event.dequeue===5,'full mission');$('start').onclick();check(!shiftClock&&!finished&&!paused&&step===0&&serial===0&&ringData.event.dequeue===0,'new shift button');check(!observedEndpointDescriptor&&!configuredEndpoint&&!configureObserved&&!usbConfigurationObserved&&successfulCompletions===0,'new shift clears descriptor and completion state');check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','restart overlay heading');setPause(true);check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','pause retained completion heading');
 console.log('PASS: reserved capacity, overflow atomicity, FIFO, multiwrap, empty ownership, later-entry mismatch/repair, pause, reset, full mission and restart.');
 `,context);

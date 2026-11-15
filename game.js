@@ -343,6 +343,32 @@ function updateEp0ConfigurationPair(pair,state) {
   if (state) module.readout(module.label,color,configured ? (observed ? 'CONFIGURED' : 'CONFIGURED · WAIT H') : 'ADDRESSED');
  }
 }
+function buildShiftClock(x,z) {
+ const center = x+.41;
+ foldedBox(center,1.036,z+.718,.66,.38,.16,.028,panelSeam);
+ foldedBox(center,1.136,z+.807,.60,.12,.08,.017,connectorMetal);
+ foldedBox(center+.056,1.144,z+.851,.43,.035,.012,.004,footRubber);
+ const latch = foldedBox(center-.194,.999,z+.827,.13,.173,.087,.023,stripeMetal);
+ flangeBolt(center-.282,1.172,z+.812,.023);
+ flangeBolt(center+.282,1.172,z+.812,.023);
+ const ticket = stationDisplay(center+.067,1.028,z+.864,.416,.175);
+ ticket.mesh.name = 'Shift Clock receipt';
+ ticket.mesh.visible = false;
+ const lamp = controlLens(center+.243,1.195,z+.850,.019,.016,
+  new THREE.MeshStandardMaterial({color:0x7f704b,emissive:0xa6e0bb,emissiveIntensity:0,roughness:.48}));
+ return {latch,ticket,lamp};
+}
+function updateShiftClock(machine,state) {
+ if (!machine) return;
+ const progress = Math.min(1,(state?.elapsed ?? 0)/.32);
+ const printed = progress === 1;
+ machine.latch.position.y = .999 - .061*progress;
+ machine.lamp.material.emissiveIntensity = printed ? .62 : 0;
+ machine.ticket.mesh.visible = Boolean(state);
+ machine.ticket.mesh.scale.y = Math.max(.001,progress);
+ machine.ticket.mesh.position.y = 1.144-.0875*progress;
+ if (state) machine.ticket('SHIFT CLOSED',0xa6e0bb,'HOST / USB CONFIGURED',`${state.receipt.count} SUCCESS EVENTS`);
+}
 function stationDisplay(x, y, z, width = .82, height = .255) {
  const canvas = document.createElement('canvas');
  canvas.width = 384;
@@ -430,7 +456,7 @@ const displayStates = {
 
 function station(id,name,x,z,color){
  const finish = cabinetFinishes[id] ?? dark;
- let control,connectionLens,contextDock,configPair;
+ let control,connectionLens,contextDock,configPair,clockMachine;
  foldedBox(x,.96,z,1.6,1.68,1.2,.045,finish);
  solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
@@ -509,6 +535,7 @@ function station(id,name,x,z,color){
   foldedBox(x+.54,1.07,z+.86,.072,.17,.13,.022,insulation);
   for(let i=0;i<3;i++)foldedBox(x-.44+i*.14,1.01,z+.783,.052,.12,.045,.012,insulation);
  } else if(id==='exit'){
+  clockMachine = buildShiftClock(x,z);
   box(x,2.15,z-.15,.16,.7,.17,steel);
   box(x,2.52,z-.15,.43,.15,.28,brass);
  }
@@ -563,7 +590,7 @@ function station(id,name,x,z,color){
   }
  }
  stations.push({
-  id,name,x,z,light,screen,display,approach,control,connectionLens,contextDock,configPair,receiptDisplay,
+  id,name,x,z,light,screen,display,approach,control,connectionLens,contextDock,configPair,receiptDisplay,clock:clockMachine,
   ringReceipt:receiptDisplay?.mesh
  });
 }
@@ -587,6 +614,7 @@ let lastCycleDiagnosticKey;
 let lastRootPortPhase;
 let lastContextDockKey;
 let lastEp0ConfigurationKey;
+let lastShiftClockPhase;
 const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
@@ -657,13 +685,15 @@ function showStationSignal(target) {
  const diagnosis = cycleDiagnosticStatus();
  const diagnosticKey = diagnosis ? Object.values(diagnosis).join('|') : '';
  const port = rootPortStatus();
+ const clockPhase = shiftClock ? (shiftClock.elapsed < .32 ? "printing" : "closed") : "idle";
  const dockStatus = contextDockStatus();
  const ep0Configuration = ep0ConfigurationState();
  const ep0ConfigurationKey = JSON.stringify(ep0Configuration);
  const dockKey = dockStatus ? [dockStatus.kind,dockStatus.phase,dockStatus.summary].join('|') : '';
  if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture &&
      step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey &&
-     port.phase === lastRootPortPhase && dockKey === lastContextDockKey && ep0ConfigurationKey === lastEp0ConfigurationKey) return;
+     port.phase === lastRootPortPhase && dockKey === lastContextDockKey && ep0ConfigurationKey === lastEp0ConfigurationKey && clockPhase === lastShiftClockPhase) return;
+ lastShiftClockPhase = clockPhase;
  lastEp0ConfigurationKey = ep0ConfigurationKey;
  lastContextDockKey = dockKey;
  lastRootPortPhase = port.phase;
@@ -706,7 +736,9 @@ function showStationSignal(target) {
   showRingReceipt(station,eventStatus,diagnosis);
   updateContextDock(station.contextDock,dockStatus);
   updateEp0ConfigurationPair(station.configPair,ep0Configuration);
-  if (eventMode) {
+  if (station.id === "exit" && shiftClock) {
+   station.display(clockPhase === "closed" ? "SHIFT CLOSED" : "CLOCKING OUT",0xa6e0bb);
+  } else if (eventMode) {
    const label = {posted:'EVENT POSTED',ready:'IRQ READY',read:'DRIVER READ'}[eventStatus.phase];
    const action = {posted:'WAIT FOR IRQ',ready:'H READ EVENT · R RINGS',read:eventCode.toUpperCase()}[eventStatus.phase];
    station.display(label,color,action);
@@ -832,6 +864,7 @@ let endpointDraft = null;
 let configureContext = null;
 let configuredEndpoint = null;
 let configureObserved = false;
+let shiftClock = null;
 let addressObserved = false;
 let usbConfigurationApplied = false;
 let usbConfigurationObserved = false;
@@ -1354,14 +1387,51 @@ function handleCompletion(){
  advance();
 }
 function advance(){step++;update()}
-function interact(){if(paused||!near||finished)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(step===0){requestShiftRootPortReset();update();return}
+function interact(){if(paused||!near||finished||shiftClock)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(step===0){requestShiftRootPortReset();update();return}
 if(step===3){applyAddressContext();return}
 if(step===8){applyEndpointContext();return}
 if(submissions[step]){
  if(step===4&&!addressContext){message('Prepare the Input Context before submitting Address Device.');return}
  if(step===9&&!configureContext){message('Prepare the Endpoint Input Context before submitting Configure Endpoint.');return}
  if(step===11&&!configureObserved){message('Read the successful Configure Endpoint completion before submitting SET_CONFIGURATION.');return}
- if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}log(m[4]);message(m[4]);if(step===missions.length-1){finished=true;paused=true;$('quick-start').hidden=true;route=[];document.exitPointerLock?.();$('overlay').style.display='grid';$('overlay').querySelector('h3').textContent='SHIFT COMPLETE';$('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${successfulCompletions} completion events successfully. USB device and controller are Configured.`;$('start').textContent='START A NEW SHIFT';$('journey').hidden=false;document.dispatchEvent(new CustomEvent('shift:complete',{detail:{addressContext,addressFailure,observedEndpointDescriptor,configuredEndpoint,configureFailure,controllerConfiguration:lastRingReceipts.get('cmd'),usbConfiguration:lastRingReceipts.get('transfer')}}));return}advance()}
+ if(job){message('TRBs already queued. Press B to write the doorbell.');return}submit(submissions[step]);return}if(near.id==='event'){if(job?.phase==='stalled'){message('No completion: EP0 stopped on a Cycle mismatch. Inspect the Transfer Ring consumer head.');return}if(!job||job.phase!=='ready'){message('The matching completion has not arrived. Wait for xHC processing and the return conveyor.');return}handleCompletion();return}if(step===missions.length-1) startShiftClock();
+}
+function startShiftClock() {
+ const controllerConfiguration = lastRingReceipts.get('cmd');
+ const usbConfiguration = lastRingReceipts.get('transfer');
+ if (!configureObserved || !usbConfigurationObserved || controllerConfiguration?.code !== 'Success' ||
+   usbConfiguration?.code !== 'Success') {
+  message('Read both successful configuration events before clocking out.');
+  return;
+ }
+ route = [];
+ shiftClock = {elapsed:0,receipt:Object.freeze({
+  count:successfulCompletions,controllerConfiguration,usbConfiguration
+ })};
+ message('Clocking out. Printing the shift receipt.');
+}
+function tickShiftClock(dt) {
+ if (paused || !shiftClock || finished) return;
+ shiftClock.elapsed = Math.min(.95,shiftClock.elapsed+dt);
+ if (shiftClock.elapsed < .95) return;
+ const {count,controllerConfiguration,usbConfiguration} = shiftClock.receipt;
+ finished=true;
+ paused=true;
+ route=[];
+ log('SHIFT COMPLETE');
+ message('SHIFT COMPLETE');
+ $('quick-start').hidden=true;
+ document.exitPointerLock?.();
+ $('overlay').style.display='grid';
+ $('overlay').querySelector('h3').textContent='SHIFT COMPLETE';
+ $('overlay').querySelector('p').textContent=`All five submissions completed. Software consumed ${count} completion events successfully. USB device and controller are Configured.`;
+ $('start').textContent='START A NEW SHIFT';
+ $('journey').hidden=false;
+ document.dispatchEvent(new CustomEvent('shift:complete',{detail:{
+  addressContext,addressFailure,observedEndpointDescriptor,configuredEndpoint,configureFailure,
+  controllerConfiguration,usbConfiguration
+ }}));
+}
 const blocked=(x,z)=>solid.some(o=>Math.abs(x-o.x)<o.w&&Math.abs(z-o.z)<o.d);
 function move(dx,dz){const count=Math.ceil(Math.max(Math.abs(dx),Math.abs(dz))/.15);for(let i=0;i<count;i++){if(!blocked(position.x+dx/count,position.z))position.x+=dx/count;if(!blocked(position.x,position.z+dz/count))position.z+=dz/count}position.x=THREE.MathUtils.clamp(position.x,-30,30);position.z=THREE.MathUtils.clamp(position.z,-30,30)}
 function findStationRoute(start, target) {
@@ -1475,6 +1545,7 @@ $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
 function reset(){
+ shiftClock = null;
  rejectedAddressInput = rejectedEndpointInput = null;
  rootPortResetElapsed = 0;
  skipRootPortFrame = false;
@@ -1610,7 +1681,9 @@ function frame() {
   updateFreightYard(elapsed);
   const steps = Math.max(1, Math.ceil(frameTime / .06));
   const dt = frameTime / steps;
+  tickShiftClock(frameTime);
   for (let index = 0; index < steps; index++) {
+   if (shiftClock) break;
    if (!skipRootPortFrame) tickRootPortReset(dt);
    tickJob(dt);
    const target = stations.find(station => station.id === missions[step][0]);
@@ -1631,6 +1704,7 @@ function frame() {
   }
  }
  const target = stations.find(station => station.id === missions[step][0]);
+ updateShiftClock(stations.find(station=>station.id==="exit").clock,shiftClock);
  showStationSignal(target);
  showYardRoute(target);
  const signal = stationSignals[job?.phase];

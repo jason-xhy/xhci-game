@@ -28,6 +28,7 @@ for(let stage=0;stage<14;stage++){
  }
  console.log('stage',stage+1,'operated');
 }
+await page.waitForFunction(()=>finished);
 assert.match(await page.locator('#overlay h3').innerText(),/SHIFT COMPLETE/);assert.match(await page.locator('#overlay p').first().innerText(),/5 completion events/);assert.match(await page.locator('#journey').innerText(),/全链路复盘/);
 await page.getByRole('button',{name:'直接读完成事件',exact:true}).click();
 assert.match(await page.locator('#journey-status').innerText(),/再试一次/);
