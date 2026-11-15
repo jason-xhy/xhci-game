@@ -224,3 +224,15 @@ body:has(#overlay:not([style*="display: none"])) #chapter-labs > button,
  color:#adedef;
  font-family:monospace;
 }
+
+#overlay .card:has(.home-briefing){width:96%;max-width:1080px         }
+#journey.home-briefing{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);column-gap:22px}
+.home-briefing > :not(.journey-preview){grid-column:1}
+.journey-preview{grid-column:2;grid-row:1 / span 6;align-self:center;margin:0;min-width:0;border:1px solid #52635c;background:#0e171a}
+.journey-preview canvas{width:100%;height:auto;aspect-ratio:16 / 9}
+#journey .journey-preview figcaption{padding:7px 10px;color:#e5d7bb;font:700 .78rem monospace}
+@media(max-width:760px){
+ #journey.home-briefing{display:block}
+ .journey-preview{margin:8px 0 12px}
+ #overlay .card:has(.home-briefing){width:min(540px,calc(100% - 28px))}
+}

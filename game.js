@@ -1671,6 +1671,50 @@ function moveWithKeys(dt) {
   (-Math.cos(yaw)*forward-Math.sin(yaw)*right)*speed);
 }
 
+const briefingCamera = new THREE.PerspectiveCamera(65,16/9,.1,150);
+briefingCamera.rotation.order = 'YXZ';
+const briefingViews = {
+ root: [-9,1.7,-14,0,0],
+ command: [-7.8824,1.7,-2,.35661,-.015],
+ 'command-ring': [-17,2.35,-3.4,0,0],
+ transfer: [8,1.7,-2,-.32175,0],
+ 'transfer-ring': [17,3.45,-1,0,0],
+ event: [0,2.40,23.3,0,0],
+ 'event-desk': [0,1.7,15,0,0]
+};
+let lastBriefingCanvas,lastBriefingEnvironment;
+function renderBriefingView() {
+ if (running) return;
+ const canvas = $('journey-scene');
+ const view = canvas?.dataset.view;
+ const pose = briefingViews[view];
+ if (!pose || (canvas === lastBriefingCanvas && canvas.dataset.rendered === view &&
+  lastBriefingEnvironment === scene.environment)) return;
+
+ const width = Math.min(innerWidth,canvas.width,Math.floor(innerHeight*16/9));
+ const height = Math.floor(width*9/16);
+ if (height < 1) return;
+ const [x,y,z,yaw,pitch] = pose;
+ briefingCamera.position.set(x,y,z);
+ briefingCamera.rotation.set(pitch,yaw,0);
+ briefingCamera.aspect = width/height;
+ briefingCamera.updateProjectionMatrix();
+
+ const ratio = renderer.getPixelRatio();
+ const source = renderer.domElement;
+ renderer.setViewport(0,0,width,height);
+ try {
+  renderer.render(scene,briefingCamera);
+  canvas.getContext('2d', {willReadFrequently:true}).drawImage(source,0,source.height-Math.round(height*ratio),
+   Math.round(width*ratio),Math.round(height*ratio),0,0,canvas.width,canvas.height);
+ } finally {
+  renderer.setViewport(0,0,innerWidth,innerHeight);
+ }
+ canvas.dataset.rendered = view;
+ lastBriefingCanvas = canvas;
+ lastBriefingEnvironment = scene.environment;
+}
+
 function frame() {
  requestAnimationFrame(frame);
  // Catch up through short steps when rendering stalls. Cap long gaps so
@@ -1716,10 +1760,12 @@ function frame() {
  const location = `BAY 04 / ${Math.round(position.x)}, ${Math.round(position.z)}`;
  if ($('location').textContent !== location) $('location').textContent = location;
  for (const parcel of parcels) parcel.label.quaternion.copy(camera.quaternion);
+ renderBriefingView();
  renderer.render(scene,camera);
 }
 document.addEventListener('visibilitychange',()=>{skipRootPortFrame=true;});
 window.onresize = () => {
+ lastBriefingCanvas = null;
  camera.aspect = innerWidth/innerHeight;
  camera.updateProjectionMatrix();
  renderer.setSize(innerWidth,innerHeight);

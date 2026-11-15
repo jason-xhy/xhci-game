@@ -8,15 +8,26 @@
   ['驱动', '写 Doorbell 0', '驱动写门铃，通知 xHC 有新的命令。'],
   ['xHC', '执行命令', 'xHC 取走命令，分配 Slot ID，并将完成 TRB 写入 Event Ring。'],
   ['xHC', '发出 IRQ', 'Event Ring 里已有结果；IRQ 通知驱动来取。'],
-  ['驱动', '处理 IRQ', '驱动读取 Command Completion，得到 Success 和 Slot ID，并推进 ERDP。']
+  ['驱动', '处理 IRQ', '驱动读取 Command Completion，得到 Success 和 Slot ID，并推进 ERDP。实操中可在命令台按 H。']
  ];
  const transferStages = [
   ['驱动', '发布控制 TD', '驱动在 EP0 Transfer Ring 上发布 GET_DESCRIPTOR 的 Setup、Data、Status TRB。'],
   ['驱动', '写 EP0 门铃', '驱动写对应 Slot 的门铃，目标是 EP0。'],
   ['xHC', '执行 USB 传输', 'xHC 消费控制 TD，与设备交换数据，并将 Transfer Event 写入 Event Ring。'],
   ['xHC', '发出 IRQ', 'Transfer Event 已在环里，IRQ 通知驱动处理。'],
-  ['驱动', '处理 IRQ', '驱动读取 Transfer Event、推进 ERDP，再使用缓冲区里的描述符选择配置。']
+  ['驱动', '处理 IRQ', '驱动读取 Transfer Event、推进 ERDP，再使用缓冲区里的描述符选择配置。实操中可在 EP0 按 H。']
  ];
+ const previewViews = {
+  root: 'ROOT PORT / USB2',
+  command: 'HOST COMMAND QUEUE',
+  'command-ring': '01 / COMMAND RING',
+  transfer: 'EP0 DISPATCH',
+  'transfer-ring': '02 / EP0 TRANSFER',
+  event: '03 / EVENT RING',
+  'event-desk': 'DRIVER IRQ DESK'
+ };
+ const commandViews = ['command','command','command-ring','event','event-desk'];
+ const transferViews = ['transfer','transfer','transfer-ring','event','event-desk'];
  const challenges = [
   ['Enable Slot 已在 Command Ring。xHC 尚未收到通知。', ['写 Doorbell 0', '直接读完成事件', '写 EP0 门铃'], 0, 'Doorbell 0 通知 xHC 取命令。EP0 门铃用于控制传输。'],
   ['IRQ 已到达，随后要准备设备上下文。你现在先做什么？', ['猜一个 Slot ID', '读 Command Completion，取得 Slot ID，并推进 ERDP', '提交 SET_CONFIGURATION'], 1, '驱动从完成事件取得 Slot ID，后续才能按该 ID 准备上下文。'],
@@ -61,16 +72,29 @@
  function briefing() {
   const {badge, heading, status, controls} = frame('01 / 全局预演', '从端口上线，到设备可用');
   const route = track(chapters.map((label, i) => [String(i + 1).padStart(2, '0'), label]));
+  const viewport = element('figure', null, 'journey-preview');
+  const sceneView = element('canvas');
+  sceneView.id = 'journey-scene';
+  sceneView.width = 720;
+  sceneView.height = 405;
+  const location = element('figcaption');
+  viewport.append(sceneView,location);
+  root.classList.add('home-briefing');
   let path = stages;
   let step = -1;
   let diagram = track(path);
   function show() {
+   const views = path === stages ? commandViews : transferViews;
+   const view = step < 0 ? 'root' : views[step];
+   sceneView.dataset.view = view;
+   sceneView.setAttribute('aria-label',previewViews[view]);
+   location.textContent = previewViews[view];
    [...diagram.children].forEach((node,i) => {
     node.toggleAttribute('data-current', i === step);
     node.toggleAttribute('data-done', i < step);
    });
    status.textContent = step < 0
-    ? '全程有三条环：驱动在 Command Ring 提交命令，在 Transfer Ring 提交传输；xHC 用 Event Ring 交回结果。沿下方走一遍 Enable Slot，看清每次交接是谁在做。'
+    ? '入场先到画面中的 USB2 根端口。单步预演可以先看驱动和 xHC 如何用三条环交接。'
     : path[step][2];
    next.textContent = step < 0 ? (path === stages ? '单步预演 Enable Slot →' : '单步预演 GET_DESCRIPTOR →')
     : step === path.length - 1 ? '重播往返' : '下一次交接 →';
@@ -86,10 +110,11 @@
    show();
   });
   controls.append(next, compare);
-  root.replaceChildren(badge,heading,route,diagram,status,controls);
+  root.replaceChildren(badge,heading,route,viewport,diagram,status,controls);
   show();
  }
  function debrief(event) {
+  root.classList.remove('home-briefing');
   const {badge, heading, status, controls} = frame('03 / 全链路复盘', '换一个视角：下一步该由谁做？');
   const route = track(chapters.map((label,i) => [String(i + 1).padStart(2, '0'), label]));
   const prompt = element('p');
