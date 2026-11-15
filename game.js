@@ -1,5 +1,5 @@
 'use strict';
-const $=id=>document.getElementById(id),scene=new THREE.Scene();scene.background=new THREE.Color(0x242c2c);scene.fog=new THREE.FogExp2(0x343b37,.018);const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.1,150),renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.prepend(renderer.domElement);scene.add(new THREE.HemisphereLight(0xb8ceca,0x343023,2));const sun=new THREE.DirectionalLight(0xffd59a,3);sun.position.set(-15,22,-8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-35,right:35,top:35,bottom:-35});scene.add(sun);
+const $=id=>document.getElementById(id),scene=new THREE.Scene();scene.background=new THREE.Color(0x242c2c);scene.fog=new THREE.FogExp2(0x343b37,.018);const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.1,150),renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,1.7));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.prepend(renderer.domElement);scene.add(new THREE.HemisphereLight(0xb5cbdf,0x564a41,1.55));const sun=new THREE.DirectionalLight(0xffd59a,3);sun.position.set(-15,22,-8);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);Object.assign(sun.shadow.camera,{left:-35,right:35,top:35,bottom:-35});scene.add(sun);
 const solid=[],stations=[],parcels=[];
 function surface(base){const c=document.createElement('canvas');c.width=c.height=256;const g=c.getContext('2d');g.fillStyle=base;g.fillRect(0,0,256,256);let seed=7;for(let i=0;i<9500;i++){seed=(seed*16807)%2147483647;const x=seed%256;seed=(seed*16807)%2147483647;const y=seed%256;g.fillStyle=i%3?'rgba(0,0,0,.08)':'rgba(230,210,170,.12)';g.fillRect(x,y,2,2)}const t=new THREE.CanvasTexture(c);t.wrapS=t.wrapT=THREE.RepeatWrapping;t.repeat.set(8,8);return t}
 function mat(c,metal=.2){return new THREE.MeshStandardMaterial({color:c,roughness:.8,metalness:metal})}const steel=mat(0x414c48),rust=mat(0x725344),dark=mat(0x202a2c),concrete=mat(0x62645b);function box(x,y,z,w,h,d,m,collision=false){const o=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),m);o.position.set(x,y,z);o.castShadow=true;o.receiveShadow=true;scene.add(o);if(collision)solid.push({x,z,w:w/2+.32,d:d/2+.32});return o}function sign(text,x,y,z,color='#e4c38c',w=4){const c=document.createElement('canvas');c.width=1024;c.height=256;const a=c.getContext('2d');a.fillStyle='#172126';a.fillRect(0,0,1024,256);a.strokeStyle=color;a.lineWidth=8;a.strokeRect(10,10,1004,236);a.fillStyle=color;a.font='bold 65px monospace';a.textAlign='center';a.fillText(text,512,145);const o=new THREE.Mesh(new THREE.PlaneGeometry(w,w/4),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(c),side:THREE.FrontSide}));const back=new THREE.Mesh(o.geometry,o.material);back.rotation.y=Math.PI;back.position.z=-.002;o.add(back);o.position.set(x,y,z);scene.add(o);return o}
@@ -7,18 +7,78 @@ rust.map=surface('#785d48');
 steel.map=surface('#4c5853');
 buildFreightYard();
 function belt(cx,cz,color,label){const m=mat(color);for(const z of [cz-2,cz+2]){box(cx,1,z,13,.45,1.5,dark,true);box(cx,1.35,z-.8,13,.15,.12,m);box(cx,1.35,z+.8,13,.15,.12,m);for(let x=cx-6;x<=cx+6;x+=.5){const r=new THREE.Mesh(new THREE.CylinderGeometry(.12,.12,1.45,8),steel);r.rotation.x=Math.PI/2;r.position.set(x,1.27,z);scene.add(r)}for(const x of [cx-5,cx+5])box(x,.5,z,.22,1,.3,rust)}for(const x of [cx-6.2,cx+6.2])box(x,1,cz,1,.4,4,dark,true);sign(label,cx,3.25,cz,'#'+color.toString(16),4.6);}belt(-17,-9,0xe6ad58,'01 / COMMAND RING');belt(17,-9,0x67ccd3,'02 / EP0 TRANSFER');belt(0,17,0x82c591,'03 / EVENT RING');
+// Scrapes are concentrated along the service door’s edges and fasteners.
+function servicePaint() {
+ const canvas = document.createElement('canvas');
+ canvas.width = canvas.height = 256;
+ const ink = canvas.getContext('2d');
+ const paint = ink.createLinearGradient(0,0,256,256);
+ paint.addColorStop(0,'#7d918f');
+ paint.addColorStop(.62,'#6c817f');
+ paint.addColorStop(1,'#586863');
+ ink.fillStyle = paint;
+ ink.fillRect(0,0,256,256);
+ ink.fillStyle = '#4a5a57';
+ ink.fillRect(5,9,1,233);
+ ink.fillRect(8,242,240,1);
+ ink.fillStyle = '#a8b4a6';
+ for (const [x,y,w] of [[9,22,12],[11,24,4],[225,39,13],[232,40,7],[13,220,11],[235,211,8],[193,239,18]]) {
+  ink.fillRect(x,y,w,1);
+ }
+ const texture = new THREE.CanvasTexture(canvas);
+ texture.colorSpace = THREE.SRGBColorSpace;
+ return texture;
+}
 const enamel = new THREE.MeshStandardMaterial({
- color:0x748986, map:surface('#849998'), roughness:.58, metalness:.18
+ color:0xaab8b5, map:servicePaint(), roughness:.57, metalness:.17
 });
 const brass = new THREE.MeshStandardMaterial({color:0xb89462, roughness:.42, metalness:.7});
 const connectorMetal = new THREE.MeshStandardMaterial({color:0xaab4b4, roughness:.35, metalness:.72});
 const insulation = new THREE.MeshStandardMaterial({color:0x18252b, roughness:.88});
 const panelSeam = new THREE.MeshStandardMaterial({color:0x273431, roughness:.72});
+const footRubber = new THREE.MeshStandardMaterial({color:0x181d1d,roughness:1});
+const stripeMetal = new THREE.MeshStandardMaterial({color:0x76756f,roughness:.43,metalness:.6});
+const conduitRubber = new THREE.MeshStandardMaterial({color:0x1a2121,roughness:.96});
+
+function cable(points, radius, material) {
+ const curve = new THREE.CatmullRomCurve3(points.map(point => new THREE.Vector3(...point)));
+ const lead = new THREE.Mesh(new THREE.TubeGeometry(curve,20,radius,8,false),material);
+ lead.castShadow = true;
+ lead.receiveShadow = true;
+ scene.add(lead);
+}
+function flangeBolt(x,y,z,radius=.035) {
+ const bolt = new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,.026,6),stripeMetal);
+ bolt.rotation.x = Math.PI/2;
+ bolt.position.set(x,y,z);
+ bolt.castShadow = true;
+ scene.add(bolt);
+}
+function boltedFeet(x,z) {
+ for (const dx of [-.6,.6]){
+  box(x+dx,.045,z,.32,.09,1.34,footRubber);
+  box(x+dx,.105,z,.27,.05,1.28,stripeMetal);
+  for (const dz of [-.53,.53]){
+   const bolt = new THREE.Mesh(new THREE.CylinderGeometry(.038,.038,.037,6),stripeMetal);
+   bolt.position.set(x+dx,.143,z+dz);
+   bolt.castShadow = bolt.receiveShadow = true;
+   scene.add(bolt);
+  }
+ }
+}
 
 function socket(x, y, z, color) {
- box(x,y,z,.3,.19,.052,connectorMetal);
- box(x,y,z+.03,.24,.135,.024,insulation);
- box(x,y-.021,z+.046,.18,.038,.015,mat(color));
+ const flangeHeight = .19;
+ // The face has a real lip, recessed insulating well, and visible contact tongue.
+ for (const edge of [-1,1]) {
+  box(x+edge*.136,y,z,.028,flangeHeight,.065,connectorMetal);
+  box(x,y+edge*.081,z,.25,.028,.065,connectorMetal);
+ }
+ box(x,y,z-.014,.242,.132,.021,insulation);
+ box(x,y-.026,z+.004,.172,.04,.025,mat(color));
+ for (const offset of [-.044,0,.044]) {
+  box(x+offset,y-.005,z+.011,.012,.004,.02,brass);
+ }
 }
 function panelHardware(x,y,z){
  box(x,y,z,1.37,.7,.052,panelSeam);
@@ -26,10 +86,54 @@ function panelHardware(x,y,z){
  for (const end of [-1,1]){
   box(x+end*.55,y+.22,z+.06,.12,.065,.04,connectorMetal);
   box(x+end*.55,y-.2,z+.06,.12,.065,.04,connectorMetal);
+  flangeBolt(x+end*.545,y+.22,z+.085,.023);
+  flangeBolt(x+end*.545,y-.2,z+.085,.023);
  }
 }
+function stationDisplay(x, y, z) {
+ const canvas = document.createElement('canvas');
+ canvas.width = 384;
+ canvas.height = 128;
+ const context = canvas.getContext('2d');
+ const texture = new THREE.CanvasTexture(canvas);
+ texture.colorSpace = THREE.SRGBColorSpace;
+ const display = new THREE.Mesh(new THREE.PlaneGeometry(.82, .255),
+  new THREE.MeshBasicMaterial({map:texture}));
+ display.position.set(x, y, z);
+ scene.add(display);
+ let previous;
+ return function draw(label, color) {
+  if (label === previous) return;
+  previous = label;
+  const ink = '#' + new THREE.Color(color).getHexString();
+  context.fillStyle = '#101b20';
+  context.fillRect(0, 0, 384, 128);
+  context.fillStyle = ink;
+  context.fillRect(0, 0, 8, 128);
+  context.font = '18px monospace';
+  context.fillText('HOST CONTROL / STATUS', 24, 30);
+  context.font = 'bold 35px monospace';
+  context.fillText(label, 24, 82, 340);
+  context.globalAlpha = .14;
+  for (let row = 0; row < 128; row += 4) context.fillRect(8, row, 376, 1);
+  context.globalAlpha = 1;
+  texture.needsUpdate = true;
+ };
+}
+
+const displayStates = {
+ queued:'WRITE DOORBELL',
+ submitted:'XHC PROCESSING',
+ returning:'EVENT POSTED',
+ ready:'IRQ READY',
+ stalled:'CYCLE MISMATCH'
+};
+
 function station(id,name,x,z,color){
- box(x,.9,z,1.6,1.8,1.2,dark,true);
+ box(x,.96,z,1.6,1.68,1.2,dark,true);
+ boltedFeet(x,z);
+ box(x,.41,z+.606,1.43,.51,.03,panelSeam);
+ box(x,.415,z+.625,1.33,.43,.022,enamel);
  if(id==='ctx'){
   box(x,1.02,z,2.58,.13,1.4,steel);
   for(const dx of [-1.12,1.12])box(x+dx,.47,z,.12,1,.22,enamel);
@@ -38,22 +142,32 @@ function station(id,name,x,z,color){
   box(x-.94,.62,z,.26,1.24,.47,enamel);
   box(x-.94,1.33,z,.38,.16,.51,brass);
   panelHardware(x,.95,z+.61);
-  socket(x-.24,1,z+.69,0x84bad2);
-  socket(x+.24,1,z+.69,0x657e86);
+  socket(x-.24,1,z+.715,0x84bad2);
+  socket(x+.24,1,z+.715,0x657e86);
+  box(x-.96,.90,z+.66,.17,.22,.16,connectorMetal);
+  cable([[x-.94,.88,z+.69],[x-1.04,.68,z+.77],[x-1.18,.38,z+.74],[x-1.16,.10,z+.62],[x-.94,.055,z+.35]],.038,conduitRubber);
   sign('USB2',x,.79,z+.705,'#d6d3ab',.36);
  } else if(id==='event'){
   for(const dx of [-.58,.58])box(x+dx,1.67,z-.36,.34,.47,.68,enamel);
  } else if(id==='transfer'){
   panelHardware(x,.96,z+.61);
   for(let i=0;i<3;i++){
-   socket(x-.38+i*.38,1.02,z+.69,0x77c9cb);
+   socket(x-.38+i*.38,1.02,z+.715,0x77c9cb);
+   const outlet = z+.50-i*.31;
+   box(x+.847,.86,outlet,.10,.16,.14,connectorMetal);
+   cable([[x+.89,.86,outlet],[x+1.02,.82,outlet],[x+1.24,.55,outlet],[x+1.42,.26,outlet-.4],[x+1.57,.19,z-1.45-i*.11]],.038,conduitRubber);
    sign(['SETUP','DATA','STATUS'][i],x-.38+i*.38,.85,z+.705,'#9fd8db',.33);
   }
  } else if(id==='cmd'){
   panelHardware(x,.96,z+.61);
-  box(x+.31,1.0,z+.70,.32,.22,.11,connectorMetal);
-  box(x+.31,1.0,z+.77,.22,.14,.06,brass);
-  sign('DB 0',x+.31,.82,z+.705,'#f0ce9a',.37);
+  box(x+.24,1.025,z+.721,.37,.26,.12,connectorMetal);
+  box(x+.24,1.025,z+.791,.31,.21,.043,insulation);
+  box(x+.24,1.025,z+.83,.23,.135,.062,brass);
+  sign('DB 0',x+.24,1.02,z+.862,'#f0ce9a',.215);
+  flangeBolt(x+.08,1.103,z+.792,.027);
+  flangeBolt(x+.40,.945,z+.792,.027);
+  box(x+.54,.96,z+.72,.145,.31,.19,stripeMetal);
+  box(x+.54,1.07,z+.77,.072,.17,.13,insulation);
   for(let i=0;i<3;i++)box(x-.44+i*.14,1.01,z+.68,.052,.12,.045,insulation);
  } else if(id==='exit'){
   box(x,2.15,z-.15,.16,.7,.17,steel);
@@ -67,15 +181,36 @@ function station(id,name,x,z,color){
   emissiveIntensity:.18, roughness:.56
  });
  box(x,1.59,z+.791,.84,.26,.02,screen);
- for(let i=0;i<6;i++)box(x-.51+i*.204,.45,z+.616,.11,.17,.028,steel);
+ for(let i=0;i<6;i++)box(x-.51+i*.204,.45,z+.641,.11,.115,.021,panelSeam);
+ box(x,.59,z+.652,.42,.045,.035,stripeMetal);
  for(const dx of [-.65,.65])for(const y of [.22,1.2]){
   const fastener=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.034,6),brass);
   fastener.rotation.x=Math.PI/2;fastener.position.set(x+dx,y,z+.625);scene.add(fastener);
  }
  const light = box(x, 1.95, z, .9, .12, .5,
   new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:.3}));
- sign(name, x, 2.48, z+.68, '#' + color.toString(16), 2.55);
- stations.push({id, name, x, z, light, screen});
+ const signWidth = id === 'port' ? 2.25 : 2.45;
+ sign(name, x, 2.38, z+.61, '#' + color.toString(16), signWidth);
+ const display = stationDisplay(x, 1.59, z+.804);
+ const approach = new THREE.MeshStandardMaterial({
+  color:0x333d3d, roughness:.72, emissive:color, emissiveIntensity:0
+ });
+ for (const offset of [-.96,.96]) {
+  box(x+offset,.023,z+2.03,.055,.008,2.7,approach);
+ }
+ if (id === 'port') {
+  // Continue the short landing rails all the way to the spawn line.
+  for (const offset of [-.96,.96]) {
+   box(x+offset,.023,z+6.18,.075,.008,5.6,approach);
+  }
+  for (const distance of [2.9,5.1,7.3]) {
+   for (const side of [-1,1]) {
+    const arrow = box(x+side*.17,.024,z+distance,.047,.008,.5,approach);
+    arrow.rotation.y = side*.72;
+   }
+  }
+ }
+ stations.push({id, name, x, z, light, screen, display, approach});
 }
 station('port','ROOT PORT / USB2',-9,-23,0xc6bf91);
 station('cmd','HOST COMMAND QUEUE',-9,-5,0xe6ad58);
@@ -84,7 +219,7 @@ station('transfer','EP0 DISPATCH',9,-5,0x67ccd3);
 station('event','DRIVER IRQ DESK',0,12,0x82c591);
 station('exit','SHIFT CLOCK',0,27,0xc6bf91);
 
-const workLamp = new THREE.PointLight(0xe6ad58, 10, 5, 2);
+const workLamp = new THREE.PointLight(0xe6ad58, 10, 4.4, 2);
 scene.add(workLamp);
 function showStationSignal(target) {
  const signal = stationSignals[job?.phase];
@@ -97,24 +232,28 @@ function showStationSignal(target) {
   station.screen.emissive.set(color);
   station.light.material.emissiveIntensity = selected ? .68 : .12;
   station.screen.emissiveIntensity = selected ? .30 : .12;
+  station.approach.emissive.set(color);
+  station.approach.emissiveIntensity = selected ? .68 : 0;
+  station.display(selected ? (displayStates[job?.phase] ?? 'OPERATE HERE') : 'STANDBY',
+   selected ? color : 0x75888d);
  }
- workLamp.position.set(active.x, 2.2, active.z+1);
+ workLamp.position.set(active.x-.22, 2.13, active.z+.96);
  workLamp.color.set(signal?.color ?? active.light.material.color);
  workLamp.intensity = signal?.power ?? 9;
 }
 const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Host driver: queue Enable Slot (E), then write Doorbell 0 (B).','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
 const startPosition = [-9, 1.7, -14];
 const position = new THREE.Vector3(...startPosition), history = [];
-const ringData={cmd:{cx:-17,cz:-9,color:0xe6ad58,enqueue:0,dequeue:0},transfer:{cx:17,cz:-9,color:0x67ccd3,enqueue:0,dequeue:0},event:{cx:0,cz:17,color:0x82c591,enqueue:0,dequeue:0}};
+const ringData={cmd:{cx:-17,cz:-9,dockX:-10.3,dockZ:-4.35,travelDirection:-1,color:0xe6ad58,enqueue:0,dequeue:0},transfer:{cx:17,cz:-9,dockX:10.3,dockZ:-4.35,travelDirection:1,color:0x67ccd3,enqueue:0,dequeue:0},event:{cx:0,cz:17,color:0x82c591,enqueue:0,dequeue:0}};
 for(const r of Object.values(ringData))Object.assign(r,{size:4,enq:0,deq:0,pcs:1,ccs:1,entries:Array(4).fill(null)});
 function pushTRB(r,type,id){if(r.enqueue-r.dequeue>=r.size-1)throw Error('Ring full');const t={type,id,cycle:r.pcs,index:r.enq,slot:1,endpoint:1,pointer:`0x${((r===ringData.cmd?0x1000:r===ringData.transfer?0x2000:0x3000)+r.enq*16).toString(16)}`};r.entries[r.enq]=t;r.enqueue++;if(++r.enq===r.size){r.enq=0;r.pcs^=1}return t}
 function popTRB(r){const t=r.entries[r.deq];if(r.dequeue===r.enqueue||!t||t.cycle!==r.ccs)return null;r.dequeue++;if(++r.deq===r.size){r.deq=0;r.ccs^=1}return t}
 const stationSignals = {
- queued: {label:'驱动已入队 · 等待门铃', color:0xe6ad58, power:13},
- submitted: {label:'xHC 正在消费 TRB', color:0x72d9e9, power:21},
+ queued: {label:'驱动已入队 · 等待门铃', color:0xe6ad58, power:12},
+ submitted: {label:'xHC 正在消费 TRB', color:0x72d9e9, power:16},
  returning: {label:'结果已写入 Event Ring · 等待 IRQ', color:0x9fc9a4, power:15},
- ready: {label:'IRQ 已到达 · 原地按 H', color:0xa0f3a4, power:26},
- stalled: {label:'xHC 停止消费 · 检查 Cycle', color:0xff744e, power:30}
+ ready: {label:'IRQ 已到达 · 原地按 H', color:0xa0f3a4, power:18},
+ stalled: {label:'xHC 停止消费 · 检查 Cycle', color:0xff744e, power:21}
 };
 
 const ringFields=new Map();
@@ -129,7 +268,11 @@ function nextEntry() {
  inspectTRB();
 }
 function inspectTRB(){updateRings();const r=ringData[inspectRing],t=r.entries[inspectIndex];message(`${inspectRing}[${inspectIndex}] ${t?`${t.type} | Cycle=${t.cycle} | job=${t.id} | Slot=${t.slot} EP=${t.endpoint} | ${t.pointer}`:'empty'} | consumer head CCS=${r.ccs}. [I] next entry [O] next ring [F] publish expected Cycle at stalled head.`)}
-function repairCycle(){if(paused||!job||job.phase!=='stalled')return;const r=ringData[job.ring];if(inspectRing!==job.ring||inspectIndex!==r.deq){message('当前条目不是卡住的消费头。比对 Transfer Ring 的 DEQ 与 CCS，再选择该条目。');return}r.entries[r.deq].cycle=r.ccs;job.phase='submitted';log('Cycle repaired and published; endpoint doorbell rung again.');updateRings();inspectTRB()}
+function repairCycle(){if(paused||!job||job.phase!=='stalled')return;const r=ringData[job.ring];if(inspectRing!==job.ring||inspectIndex!==r.deq){message('当前条目不是卡住的消费头。比对 Transfer Ring 的 DEQ 与 CCS，再选择该条目。');return}r.entries[r.deq].cycle=r.ccs;
+ const repaired = parcels.find(parcel => parcel.index === job.consumed);
+ repaired?.o.material.color?.set(r.color);
+ job.repairedHead = job.consumed;
+ job.phase='submitted';log('Cycle repaired and published; endpoint doorbell rung again.');updateRings();inspectTRB()}
 const submissions={1:{ring:'cmd',name:'Enable Slot',types:['Enable Slot'],event:'Command Completion',slot:1},4:{ring:'cmd',name:'Address Device',types:['Address Device · BSR=0'],event:'Command Completion',slot:1},6:{ring:'transfer',name:'GET_DESCRIPTOR',types:['Setup · GET_DESCRIPTOR','Data · IN','Status · OUT · IOC'],event:'Transfer Event',slot:1},9:{ring:'cmd',name:'Configure Endpoint',types:['Configure Endpoint · DC=0'],event:'Command Completion',slot:1},11:{ring:'transfer',name:'SET_CONFIGURATION',types:['Setup · SET_CONFIGURATION(1)','Status · IN · IOC'],event:'Transfer Event',slot:1}};
 function log(entry) {
  history.push(entry);
@@ -176,13 +319,101 @@ function updateRings(){
  $('rings').replaceChildren(fragment);
 }
 
-function placeParcel(p,t){const r=ringData[p.ring],leg=Math.min(t,.9999)*4;let x,z;if(leg<1){x=-6+12*leg;z=-2}else if(leg<2){x=6;z=-2+4*(leg-1)}else if(leg<3){x=6-12*(leg-2);z=2}else{x=-6;z=2-4*(leg-3)}p.o.position.set(r.cx+x,1.8,r.cz+z);p.label.position.set(r.cx+x,2.55,r.cz+z);}
-function spawn(ring,label,index=0){const r=ringData[ring],o=box(0,1.8,0,1,.65,.7,mat(r.color)),tag=sign(label,0,0,0,'#'+r.color.toString(16),3);o.castShadow=false;const p={o,label:tag,ring,index};o.visible=tag.visible=index===0;parcels.push(p);placeParcel(p,0);return p}
-function clearParcels(){for(const p of parcels){scene.remove(p.o,p.label);p.o.geometry.dispose();p.o.material.dispose();p.label.geometry.dispose();p.label.material.map.dispose();p.label.material.dispose()}parcels.length=0}
+function setParcelPosition(parcel, x, z, height = 1.56) {
+ parcel.o.position.set(x,height,z);
+ parcel.label.position.set(x,height+.43,z);
+}
+
+function stageParcel(parcel) {
+ const ring = ringData[parcel.ring];
+ setParcelPosition(parcel,ring.dockX,ring.dockZ+.42*parcel.index);
+ parcel.o.visible = true;
+ parcel.label.visible = parcel.index === 0;
+}
+
+function placeParcel(parcel, progress) {
+ const ring = ringData[parcel.ring];
+ if (parcel.ring !== 'event') {
+  const direction = ring.travelDirection;
+  const headX = ring.cx-6*direction;
+  const frontZ = ring.cz+2;
+  const dockZ = ring.dockZ+.42*parcel.index;
+  // Join the feed tray to the drive side of the belt before crossing the rollers.
+  if (progress < .24) {
+   const travel = progress/.24;
+   setParcelPosition(parcel,ring.dockX+(headX-ring.dockX)*travel,dockZ+(frontZ-dockZ)*travel);
+  } else {
+   const travel = (progress-.24)/.76;
+   setParcelPosition(parcel,headX+direction*12*travel,frontZ);
+  }
+  return;
+ }
+ const travel = Math.min(progress,1);
+ setParcelPosition(parcel,ring.cx-5+10*travel,ring.cz+2);
+}
+
+function spawn(ring,label,index=0) {
+ const r = ringData[ring];
+ const body = box(0,1.5,0,.54,.32,.36,mat(r.color,.33));
+ const tag = sign(label,0,0,0,'#'+r.color.toString(16),1.9);
+ // Moving TRBs rely on Local light; the static yard shadow map is baked at load.
+ body.castShadow = false;
+ const parcel = {o:body,label:tag,ring,index};
+ parcels.push(parcel);
+ if (ring === 'event') placeParcel(parcel,0);
+ else stageParcel(parcel);
+ return parcel;
+}
+
+function clearParcels() {
+ for (const parcel of parcels) {
+  scene.remove(parcel.o,parcel.label);
+  parcel.o.geometry.dispose();
+  parcel.o.material.dispose();
+  parcel.label.geometry.dispose();
+  parcel.label.material.map.dispose();
+  parcel.label.material.dispose();
+ }
+ parcels.length = 0;
+}
+
+function moveSubmittedParcels() {
+ for (const parcel of parcels) {
+  if (parcel.index < job.consumed) {
+   parcel.o.visible = parcel.label.visible = false;
+   continue;
+  }
+  const offsetTime = job.time-parcel.index*.35;
+  if (offsetTime <= 0) {
+   stageParcel(parcel);
+   continue;
+  }
+  parcel.o.visible = parcel.label.visible = true;
+  const progress = offsetTime/2;
+  const repairedProgress = job.repairedHead === parcel.index ? .24+progress*.76 : progress;
+  placeParcel(parcel,Math.min(repairedProgress,1));
+ }
+}
+
+function holdFaultParcel() {
+ for (const parcel of parcels) {
+  if (parcel.index < job.consumed) {
+   parcel.o.visible = parcel.label.visible = false;
+  } else if (parcel.index === job.consumed) {
+   parcel.o.visible = parcel.label.visible = true;
+   placeParcel(parcel,.24);
+   parcel.o.material.color?.set(0xff744e);
+  } else {
+   stageParcel(parcel);
+  }
+ }
+}
+
 function submit(def){
  job={...def,id:++serial,phase:'queued',time:0,consumed:0,source:step};
  job.trbs=def.types.map(type=>pushTRB(ringData[def.ring],type,serial));
  if(step===6)job.trbs[0].cycle^=1;
+ job.types.forEach((type,i)=>spawn(job.ring,`#${job.id} ${type}`,i));
  log(`Host queued #${serial} ${def.name}; waiting for doorbell.`);
  message('TRBs are in memory. Press B to notify xHC.');
  updateRings();
@@ -191,7 +422,6 @@ function ringDoorbell(){
  if(paused||job?.phase!=='queued'||near?.id!==missions[step][0])return;
  playYardCue('doorbell');
  job.phase='submitted';
- job.types.forEach((type,i)=>spawn(job.ring,`#${job.id} ${type}`,i));
  log(`Host wrote doorbell ${job.ring==='cmd'?'0':'slot 1 / EP0'}; xHC can fetch #${job.id}.`);
  message('Doorbell delivered. Watch the ring pointers move, then press H when IRQ arrives.');
  advance();
@@ -200,11 +430,11 @@ function tickJob(dt){
  if(paused||!job||['queued','ready','stalled'].includes(job.phase))return;
  job.time+=dt;
  if(job.phase==='submitted'){
-  for(const p of parcels){p.o.visible=p.label.visible=job.time>=p.index*.65;placeParcel(p,Math.min(1,Math.max(0,(job.time-p.index*.35)/2)));}
+  moveSubmittedParcels();
   const r=ringData[job.ring];
   while(job.consumed<job.trbs.length){
    const t=r.entries[r.deq];
-   if(!t||t.cycle!==r.ccs){job.phase='stalled';playYardCue('fault');route=[];
+   if(!t||t.cycle!==r.ccs){job.phase='stalled';holdFaultParcel();playYardCue('fault');route=[];
    log(`xHC stopped at ${job.ring.toUpperCase()} DEQ[${r.deq}]: C=${t?.cycle ?? 'empty'}, CCS=${r.ccs}. No completion produced.`);
    message('控制器停在消费头。用 O / I 或面板按钮选择条目，再修复 Cycle。');
    updateRings();
@@ -450,6 +680,31 @@ window.onresize = () => {
  camera.updateProjectionMatrix();
  renderer.setSize(innerWidth,innerHeight);
 };
+function buildParcelDocks() {
+ for (const id of ['cmd','transfer']) {
+  const ring = ringData[id];
+  const headX = ring.cx-6*ring.travelDirection;
+  const headZ = ring.cz+2;
+  const dx = headX-ring.dockX;
+  const dz = headZ-ring.dockZ;
+  const length = Math.hypot(dx,dz);
+  const heading = Math.atan2(dx,dz);
+  const railMaterial = mat(ring.color,.4);
+  box(ring.dockX,1.26,ring.dockZ+.36,.73,.15,1.30,panelSeam);
+  for (const side of [-1,1]) {
+   box(ring.dockX+side*.33,1.39,ring.dockZ+.36,.045,.08,1.30,railMaterial);
+  }
+  const bridge = box(ring.dockX+dx/2,1.30,ring.dockZ+dz/2,.66,.11,length,stripeMetal);
+  bridge.rotation.y = heading;
+  const runIn = box(ring.dockX+dx/2,1.37,ring.dockZ+dz/2,.48,.021,length,panelSeam);
+  runIn.rotation.y = heading;
+  box(ring.dockX,.62,ring.dockZ+.62,.17,1.23,.25,dark);
+  box(ring.dockX,.047,ring.dockZ+.62,.28,.09,.33,stripeMetal);
+  box(headX,.60,headZ,.21,1.18,.21,dark);
+  box(headX,.044,headZ,.32,.09,.3,stripeMetal);
+ }
+}
+buildParcelDocks();
 update();
 frame();
 

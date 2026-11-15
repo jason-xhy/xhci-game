@@ -9,12 +9,12 @@ function updateFreightYard(time) {
 }
 
 function buildFreightYard() {
- const sky = new THREE.Color(0x9a8c77);
+ const sky = new THREE.Color(0x929d9d);
  scene.background = sky;
- scene.fog = new THREE.FogExp2(sky, .012);
+ scene.fog = new THREE.FogExp2(sky, .017);
  sun.position.set(-26, 19, -38);
  sun.color.set(0xffc990);
- sun.intensity = 2.15;
+ sun.intensity = 2.45;
  const asphalt = new THREE.MeshStandardMaterial({
   color:0x8c8c83, map:surface('#343d3e'), roughness:.84, metalness:.05
  });
@@ -114,5 +114,11 @@ function buildFreightYard() {
  }
  box(0,2,-27,9,4,3,beam,true);
  for(let x=-3.85;x<4;x+=.55)box(x,2,-25.47,.08,3.4,.1,joints);
- sign('HOST CONTROLLER / BAY 04',0,4.65,-25.31,'#d7c19b',7.4);
+ sign('HOST CONTROLLER / BAY 04',0,3.38,-25.29,'#c9c9b6',3.8);
+ for (const dx of [-1.67,1.67]) box(dx,3.39,-25.39,.07,.76,.06,joints);
+ // Low hard stops along the container frontage establish scale without blocking the aisle.
+ for (const x of [-6.35,5.4]) {
+  box(x,.19,-25.01,.42,.38,1.18,joints);
+  box(x,.35,-24.54,.42,.07,.10,paint);
+ }
 }
