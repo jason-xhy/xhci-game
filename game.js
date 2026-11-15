@@ -89,6 +89,30 @@ const insulation = new THREE.MeshStandardMaterial({color:0x18252b, roughness:.88
 const panelSeam = new THREE.MeshStandardMaterial({color:0x273431, roughness:.72});
 const footRubber = new THREE.MeshStandardMaterial({color:0x181d1d,roughness:1});
 const stripeMetal = new THREE.MeshStandardMaterial({color:0x76756f,roughness:.43,metalness:.6});
+const faceMetal = new THREE.MeshStandardMaterial({
+ color:0x89949a, roughness:.68, roughnessMap:brushed, bumpMap:brushed,
+ bumpScale:.0014, metalness:.42
+});
+const edgeWear = new THREE.MeshStandardMaterial({color:0xa69f8b,roughness:.58,metalness:.53});
+const lampHousing = new THREE.MeshStandardMaterial({color:0x354246,roughness:.76,metalness:.24});
+
+function wornLip(x,y,z,width) {
+ box(x,y,z,width,.014,.020,panelSeam);
+ box(x-width*.36,y+.006,z+.004,width*.13,.004,.018,edgeWear);
+ box(x+width*.19,y+.006,z+.004,width*.17,.004,.018,edgeWear);
+}
+
+function stationHood(x,z,color) {
+ foldedBox(x,1.91,z+.46,.86,.125,.52,.022,lampHousing);
+ box(x,1.87,z+.674,.81,.046,.066,insulation);
+ for (const side of [-1,1]) {
+  foldedBox(x+side*.407,1.85,z+.527,.047,.09,.28,.011,lampHousing);
+ }
+ const lens = new THREE.MeshStandardMaterial({
+  color, emissive:color, emissiveIntensity:.12, roughness:.72, metalness:.04
+ });
+ return box(x,1.836,z+.645,.745,.028,.035,lens);
+}
 const conduitRubber = new THREE.MeshStandardMaterial({color:0x1a2121,roughness:.96});
 
 function cable(points, radius, material) {
@@ -191,6 +215,7 @@ function serviceDoor(x,z,finish) {
  foldedBox(x,.435,z+.641,1.34,.43,.045,.014,finish);
  // A pull handle and shadowed slots identify the removable lower service cover.
  foldedBox(x,.582,z+.68,.45,.045,.035,.008,stripeMetal);
+ wornLip(x,.588,z+.70,.38);
  for (const dx of [-.20,.20])box(x+dx,.581,z+.66,.050,.043,.043,insulation);
  box(x,.377,z+.666,1.10,.137,.02,insulation);
  const louvers = new THREE.InstancedMesh(new THREE.BoxGeometry(.126,.034,.028),stripeMetal,8);
@@ -209,6 +234,7 @@ function socket(x, y, z, color) {
   box(x,y+edge*.081,z,.25,.028,.065,connectorMetal);
  }
  box(x,y,z-.014,.242,.132,.021,insulation);
+ wornLip(x,y-.071,z+.034,.228);
  box(x,y-.026,z+.004,.172,.04,.025,mat(color));
  for (const offset of [-.044,0,.044]) {
   box(x+offset,y-.005,z+.011,.012,.004,.02,brass);
@@ -303,6 +329,8 @@ function station(id,name,x,z,color){
   for (const height of [.33,.62]) {
    foldedBox(x-.99,height,z+.71,.12,.042,.10,.012,stripeMetal);
   }
+  flangeBolt(x-.95,.17,z+.638,.032);
+  controlLens(x-.955,.90,z+.742,.055,.030,stripeMetal);
   control = controlLens(x+.48,.99,z+.825,.053,.025,
    new THREE.MeshStandardMaterial({color:0x819a60,emissive:0xa6c88c,emissiveIntensity:.1,roughness:.42}));
  } else if(id==='event'){
@@ -321,7 +349,8 @@ function station(id,name,x,z,color){
    foldedBox(socketX,socketY,socketZ-.075,.352,.225,.105,.014,stripeMetal);
    socket(socketX,socketY,socketZ,0x77c9cb);
    const outlet = z+.50-i*.31;
-   box(x+.847,.86,outlet,.10,.16,.14,connectorMetal);
+   foldedBox(x+.836,.86,outlet,.11,.158,.16,.018,insulation);
+   foldedBox(x+.905,.858,outlet,.072,.108,.125,.014,stripeMetal);
    cable([[x+.89,.86,outlet],[x+1.02,.82,outlet],[x+1.24,.55,outlet],[x+1.42,.26,outlet-.4],[x+1.57,.19,z-1.45-i*.11]],.038,conduitRubber);
    sign(['SETUP','DATA','STATUS'][i],socketX,.842,z+.823,'#b8e5e7',.39);
   }
@@ -331,7 +360,8 @@ function station(id,name,x,z,color){
    new THREE.MeshStandardMaterial({color:0x49868d,emissive:0xa5e6ed,emissiveIntensity:.12,roughness:.48}));
   sign('B / EP0',x-.71,1.19,z+.8,'#a4dbe4',.30);
   for (const offset of [.35,.04,-.27]) {
-   foldedBox(x+1.04,.77,z+offset,.089,.11,.056,.013,stripeMetal);
+   foldedBox(x+1.04,.77,z+offset,.10,.112,.061,.013,stripeMetal);
+   flangeBolt(x+1.04,.792,z+offset+.039,.018);
   }
  } else if(id==='cmd'){
   foldedBox(x,.99,z+.625,1.44,.48,.178,.033,panelSeam);
@@ -342,6 +372,9 @@ function station(id,name,x,z,color){
   control = controlLens(x+.24,1.025,z+.935,.063,.053,
    new THREE.MeshStandardMaterial({color:0xb68137,emissive:0xe6ad58,emissiveIntensity:.12,roughness:.48}));
   sign('B / DB 0',x+.24,.873,z+.836,'#ffcf89',.36);
+  foldedBox(x+.061,1.031,z+.913,.054,.176,.086,.013,footRubber);
+  foldedBox(x+.419,1.031,z+.913,.054,.176,.086,.013,footRubber);
+  wornLip(x+.24,1.138,z+.921,.349);
   flangeBolt(x+.08,1.103,z+.853,.027);
   flangeBolt(x+.40,.945,z+.853,.027);
   foldedBox(x+.54,.96,z+.81,.145,.31,.19,.023,stripeMetal);
@@ -352,7 +385,11 @@ function station(id,name,x,z,color){
   box(x,2.52,z-.15,.43,.15,.28,brass);
  }
  foldedBox(x,1.62,z,.96,.52,1.28,.045,finish);
- foldedBox(x,1.46,z+.658,1.28,.66,.082,.024,connectorMetal);
+ foldedBox(x,1.46,z+.658,1.28,.66,.082,.024,faceMetal);
+ foldedBox(x,1.355,z+.715,1.02,.068,.079,.014,insulation);
+ if (id === 'cmd' || id === 'transfer' || id === 'port') {
+  for (const side of [-1,1]) flangeBolt(x+side*.556,1.29,z+.715,.023);
+ }
  foldedBox(x,1.58,z+.72,.99,.38,.12,.024,footRubber);
  const screen = new THREE.MeshStandardMaterial({
   color:new THREE.Color(color).multiplyScalar(.24), emissive:color,
@@ -362,8 +399,7 @@ function station(id,name,x,z,color){
  for (const dx of [-.65,.65]) for (const y of [.25,1.23]) {
   flangeBolt(x+dx,y,z+.649,.035);
  }
- const light = box(x, 1.95, z, .9, .12, .5,
-  new THREE.MeshStandardMaterial({color, emissive:color, emissiveIntensity:.3}));
+ const light = stationHood(x,z,color);
  const signWidth = id === 'port' ? 2.25 : 2.45;
  for (const offset of [-.37, .37]) {
   box(x+offset,2.11,z+.51,.07,.52,.085,stripeMetal);
@@ -399,8 +435,8 @@ station('event','DRIVER IRQ DESK',0,12,0x82c591);
 station('exit','SHIFT CLOCK',0,27,0xc6bf91);
 buildCabinetBolts();
 
-const workLamp = new THREE.PointLight(0xe6ad58, 10, 3.45, 2);
-scene.add(workLamp);
+const workLamp = new THREE.SpotLight(0xe6ad58, 5, 3.4, .70, .78, 2);
+scene.add(workLamp,workLamp.target);
 const workNeutral = new THREE.Color(0xf2e2d4);
 let lastLitStation;
 let lastLitPhase;
@@ -426,7 +462,7 @@ function showStationSignal(target) {
   const color = selected && signal ? signal.color : station.light.material.color;
   station.light.material.emissive.set(color);
   station.screen.emissive.set(color);
-  station.light.material.emissiveIntensity = selected ? .68 : .12;
+  station.light.material.emissiveIntensity = selected ? .52 : .06;
   station.screen.emissiveIntensity = selected ? .30 : .12;
   station.approach.emissive.set(color);
   station.approach.emissiveIntensity = selected ? .68 : 0;
@@ -457,9 +493,11 @@ function showStationSignal(target) {
    station.display('USB2 PORT READY',0xb7d6a6);
   } else station.display('STANDBY',0x75888d);
  }
- workLamp.position.set(active.x-.30, 1.96, active.z+1.24);
- workLamp.color.set(signal?.color ?? active.light.material.color).lerp(workNeutral,.55);
- workLamp.intensity = (signal?.power ?? 9)*.81;
+ // Aim the hood light across the controls and the cabinet face.
+ workLamp.position.set(active.x, 1.85, active.z+1.04);
+ workLamp.target.position.set(active.x, .81, active.z+.70);
+ workLamp.color.set(signal?.color ?? active.light.material.color).lerp(workNeutral,.58);
+ workLamp.intensity = (signal?.power ?? 9)*.38;
 }
 const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Host driver: queue Enable Slot (E), then write Doorbell 0 (B).','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
 const startPosition = [-9, 1.7, -14];
