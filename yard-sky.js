@@ -74,9 +74,35 @@ function createYardSky(sunDirection) {
   new THREE.MeshBasicMaterial({map,side:THREE.BackSide,fog:false,depthWrite:false,toneMapped:false}));
  dome.frustumCulled = false;
  dome.renderOrder = -100;
+ // A sky has direction without nearby parallax. Translation follows the
+ // render camera, while the panorama's orientation stays in world space.
+ dome.onBeforeRender = (_render,_world,view) => {
+  dome.position.setFromMatrixPosition(view.matrixWorld);
+  dome.updateMatrixWorld();
+ };
  scene.add(dome);
  scene.fog.color.setRGB(...horizon.map(channel => channel/255), THREE.SRGBColorSpace);
  return map;
 }
 
 const yardSkyTexture = createYardSky(sun.position.clone().normalize());
+
+async function loadYardCloudPhotograph() {
+ const photo = new Image();
+ photo.src = 'assets/yard/lighting/freight-station-sky-overlay.webp';
+ try {
+  await photo.decode();
+  const canvas = yardSkyTexture.image;
+  if (photo.naturalWidth !== canvas.width || photo.naturalHeight !== canvas.height) {
+   throw new Error('unexpected sky panorama dimensions');
+  }
+  // The image fades to transparent above the horizon. The edited canvas
+  // remains the single source for both the dome and wet-surface reflections.
+  canvas.getContext('2d').drawImage(photo,0,0);
+  yardSkyTexture.needsUpdate = true;
+ } catch (error) {
+  console.warn(`Yard cloud photograph unavailable. Keeping the procedural sky (${error.message}).`);
+ }
+}
+
+loadYardCloudPhotograph();

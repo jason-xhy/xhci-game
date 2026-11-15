@@ -12,3 +12,5 @@ The color maps use the sRGB color space. OpenGL normal and roughness maps are li
 [Shipping Container](https://grab3d.com/models/city/shipping-container-proz/) by Grab3D is a procedurally generated CC0 model. Its primitive was extracted into mesh.bin with a layout manifest. Color and normal maps were resized to 1,024 pixels and the packed roughness/metallic map to 512 pixels. The publisher's license and origin disclosure accompany the asset.
 
 [Freight Station](https://polyhaven.com/a/freight_station) from Poly Haven is a CC0 HDR panorama. The downloadable environment fill is a 256×128 little-endian RGBA16F pack averaged in linear light. The brightest upper-hemisphere azimuth is aligned with the existing yard sun. Its intensity is scaled and capped for use beside the directional light.
+
+The sky overlay uses the high-sky portion of the same Freight Station panorama. The photo was tone-mapped to sRGB and aligned with the yard light azimuth. The sampled upper sky omits photographed terrain and structures. A feathered mask leaves the game's procedural sun and horizon visible.
