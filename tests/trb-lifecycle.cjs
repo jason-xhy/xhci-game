@@ -15,8 +15,14 @@ for(const index of [1,4,6,9,11]){
   if(JSON.stringify(parcels.map(parcel=>parcel.o.position.coordinates))===staged)throw Error('doorbell did not move queued TRB');
  }if(!job||step!==index+1)throw Error('submission');
  near={id:'event',name:'events'};interact();if(step!==index+1)throw Error('premature collection');
- paused=false;if(index===6){tickJob(.1);if(job.phase!=='stalled'||ringData.transfer.dequeue!==0)throw Error('missing stall');const before=ringData.event.enqueue;const held=JSON.stringify(parcels[0].o.position.coordinates);tickJob(20);if(ringData.event.enqueue!==before||JSON.stringify(parcels[0].o.position.coordinates)!==held)throw Error('premature event or movement during fault');repairCycle();if(job.phase!=='stalled')throw Error('repaired an unselected entry');nextRing();repairCycle();}for(let i=0;i<120;i++)tickJob(.1);if(job.phase!=='ready')throw Error('completion');
- interact();if(job!==null||step!==index+2||parcels.length)throw Error('consumption');
+ paused=false;if(index===6){tickJob(.1);if(job.phase!=='stalled'||ringData.transfer.dequeue!==0)throw Error('missing stall');const before=ringData.event.enqueue;const held=JSON.stringify(parcels[0].o.position.coordinates);tickJob(20);if(ringData.event.enqueue!==before||JSON.stringify(parcels[0].o.position.coordinates)!==held)throw Error('premature event or movement during fault');repairCycle();if(job.phase!=='stalled')throw Error('repaired an unselected entry');nextRing();repairCycle();}for(let i=0;i<120;i++)tickJob(.1);if(job.phase!=='ready'||eventDeskStatus().phase!=='ready')throw Error('completion');
+ const eventHead=ringData.event.deq;
+ const origin=missions[job.source][0];
+ interact();
+ const receipt=lastRingReceipts.get(origin);
+ if(eventDeskStatus().phase!=='read'||receipt!==lastRingReceipts.get('event')||
+    receipt.erdpBefore!==eventHead||receipt.erdpAfter!==ringData.event.deq)throw Error('completion receipt');
+ if(job!==null||step!==index+2||parcels.length)throw Error('consumption');
 }
 if(ringData.cmd.enqueue!==3||ringData.cmd.dequeue!==3||ringData.transfer.enqueue!==5||ringData.transfer.dequeue!==5||ringData.event.enqueue!==5||ringData.event.dequeue!==5)throw Error('counters');
 if(ringData.transfer.enq!==1||ringData.transfer.pcs!==0||ringData.transfer.ccs!==0||ringData.event.enq!==1)throw Error('wrap');
@@ -32,9 +38,9 @@ reset();paused=false;step=1;submit(submissions[1]);setPause(true);const submitte
 paused=false;near={id:'port'};interact();step=6;near={id:'transfer'};submit(submissions[6]);ringDoorbell();tickJob(.1);check(job.phase==='stalled','fault');check($('task').textContent==='Repair the descriptor Cycle mismatch','stalled objective');route=[[1,1]];navigate();check(route.length===0&&inspectIndex===0&&$('message').textContent.includes('检查 Cycle'),'stalled navigation');near={id:'event'};interact();check(job.phase==='stalled'&&$('message').textContent.includes('No completion:'),'stalled collection guidance');
 nextRing();nextEntry();repairCycle();check(job.phase==='stalled','wrong repair');inspectIndex=0;
 setPause(true);const frozen=JSON.stringify(ringData);tickJob(50);repairCycle();check(JSON.stringify(ringData)===frozen&&job.phase==='stalled','paused stall changed');setPause(false);repairCycle();
-job.trbs[1].cycle^=1;tickJob(5);check(job.phase==='stalled'&&job.consumed===1&&ringData.transfer.dequeue===1&&ringData.event.enqueue===0&&inspectIndex===0,'later mismatch preserves selection');nextEntry();repairCycle();tickJob(1);check(job.phase==='returning'&&ringData.event.enqueue===1,'later repair');
+job.trbs[1].cycle^=1;tickJob(5);check(job.phase==='stalled'&&job.consumed===1&&ringData.transfer.dequeue===1&&ringData.event.enqueue===0&&inspectIndex===0,'later mismatch preserves selection');nextEntry();repairCycle();tickJob(1);check(job.phase==='returning'&&ringData.event.enqueue===1&&eventDeskStatus().phase==='posted','later repair');
 setPause(true);const time=job.time;tickJob(50);check(job.time===time&&job.phase==='returning','pause returning');setPause(false);tickJob(5);tickJob(50);check(ringData.event.enqueue===1,'duplicate completion');near={id:'event'};interact();const count=ringData.event.dequeue;interact();check(ringData.event.dequeue===count,'double collection');
-reset();check(parcels.length===0&&history.length===0&&job===null,'restart cleanup');
+reset();check(parcels.length===0&&history.length===0&&job===null&&!lastRingReceipts.size&&eventDeskStatus().phase==='idle','restart cleanup');
 paused=false;for(let i=0;i<14;i++){near={id:missions[step][0]};interact();if(job?.phase==='queued'){ringDoorbell();tickJob(.1);if(job.phase==='stalled'){nextRing();repairCycle();}tickJob(10);tickJob(5);}}
 check(finished&&paused&&ringData.event.dequeue===5,'full mission');$('start').onclick();check(!finished&&!paused&&step===0&&serial===0&&ringData.event.dequeue===0,'new shift button');check(!observedEndpointDescriptor&&!configuredEndpoint&&!configureObserved&&!usbConfigurationObserved&&successfulCompletions===0,'new shift clears descriptor and completion state');check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','restart overlay heading');setPause(true);check($('overlay').querySelector('h3').textContent==='FIRST SHIFT','pause retained completion heading');
 console.log('PASS: reserved capacity, overflow atomicity, FIFO, multiwrap, empty ownership, later-entry mismatch/repair, pause, reset, full mission and restart.');

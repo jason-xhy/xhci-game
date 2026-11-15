@@ -259,22 +259,23 @@ function controlLens(x,y,z,radius,depth,material) {
  return lens;
 }
 
-function stationDisplay(x, y, z) {
+function stationDisplay(x, y, z, width = .82, height = .255) {
  const canvas = document.createElement('canvas');
  canvas.width = 384;
  canvas.height = 128;
  const context = canvas.getContext('2d');
  const texture = new THREE.CanvasTexture(canvas);
  texture.colorSpace = THREE.SRGBColorSpace;
- const display = new THREE.Mesh(new THREE.PlaneGeometry(.82, .255),
+ const display = new THREE.Mesh(new THREE.PlaneGeometry(width,height),
   new THREE.MeshBasicMaterial({map:texture}));
  display.position.set(x, y, z);
  scene.add(display);
  let previous;
- return function draw(label, color, action = '') {
+ function draw(label, color, action = '') {
   const state = label + '|' + color + '|' + action;
-  if (state === previous) return;
+  if (state === previous && display.userData.lines?.length) return;
   previous = state;
+  display.userData.lines = [label,action];
   const ink = '#' + new THREE.Color(color).getHexString();
   context.fillStyle = '#101b20';
   context.fillRect(0, 0, 384, 128);
@@ -292,7 +293,9 @@ function stationDisplay(x, y, z) {
   for (let row = 0; row < 128; row += 4) context.fillRect(8, row, 376, 1);
   context.globalAlpha = 1;
   texture.needsUpdate = true;
- };
+ }
+ draw.mesh = display;
+ return draw;
 }
 
 const displayStates = {
@@ -407,6 +410,15 @@ function station(id,name,x,z,color){
  }
  sign(name, x, 2.38, z+.61, '#' + color.toString(16), signWidth);
  const display = stationDisplay(x, 1.59, z+.804);
+ let receiptDisplay;
+ if (['cmd','transfer','event'].includes(id)) {
+  const receiptX = x + (id==='transfer'?-.94:.93);
+  foldedBox(receiptX,1.64,z+.650,.80,.31,.12,.025,panelSeam);
+  foldedBox(receiptX,1.64,z+.717,.73,.266,.073,.018,footRubber);
+  receiptDisplay = stationDisplay(receiptX,1.64,z+.756,.68,.227);
+  receiptDisplay.mesh.name = name + ' ring receipt';
+  receiptDisplay.mesh.visible = false;
+ }
  const approach = new THREE.MeshStandardMaterial({
   color:0x333d3d, roughness:.72, emissive:color, emissiveIntensity:0
  });
@@ -425,7 +437,10 @@ function station(id,name,x,z,color){
    }
   }
  }
- stations.push({id, name, x, z, light, screen, display, approach, control});
+ stations.push({
+  id,name,x,z,light,screen,display,approach,control,receiptDisplay,
+  ringReceipt:receiptDisplay?.mesh
+ });
 }
 station('port','ROOT PORT / USB2',-9,-23,0xc6bf91);
 station('cmd','HOST COMMAND QUEUE',-9,-5,0xe6ad58);
@@ -447,6 +462,28 @@ const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
 };
+function showRingReceipt(station,eventStatus) {
+ if (!station.ringReceipt) return;
+ let receipt = lastRingReceipts.get(station.id);
+ const pending = station.id==='event' && ['posted','ready'].includes(eventStatus.phase);
+ if (pending) receipt = eventStatus.entry;
+ station.ringReceipt.visible = Boolean(receipt);
+ if (!receipt) {
+  station.ringReceipt.userData.lines = [];
+  return;
+ }
+ const code = receipt.completionCode ?? receipt.code;
+ const type = receipt.type==='Command Completion' ? 'CMD CCE' : 'XFER EVENT';
+ const number = receipt.jobId ?? receipt.id;
+ const color = code==='Success' ? 0x9bd9a4 : 0xff866b;
+ if (pending) {
+  station.receiptDisplay(`#${number} ${type}`,color,`${code.toUpperCase()} · SLOT ${receipt.slot}`);
+ } else {
+  station.receiptDisplay(`READ #${number} · ${code.toUpperCase()}`,color,
+   `SLOT ${receipt.slot} · ERDP ${receipt.erdpBefore}→${receipt.erdpAfter}`);
+ }
+}
+
 function showStationSignal(target) {
  const phase = job?.phase;
  const stationId = job ? missions[job.source][0] : target.id;
@@ -457,14 +494,19 @@ function showStationSignal(target) {
  lastDeparture = departure;
  lastSignalStep = step;
  const signal = stationSignals[phase];
+ const eventStatus = eventDeskStatus();
  const active = stations.find(station => station.id === stationId);
  for (const station of stations) {
   const selected = active === station;
-  const color = selected && signal ? signal.color : station.light.material.color;
+  const eventMode = station.id==='event' && eventStatus.phase!=='idle';
+  const eventCode = eventStatus.entry?.completionCode ?? eventStatus.entry?.code;
+  const eventColor = eventCode==='Success' ? 0x9bd9a4 : 0xff866b;
+  const color = eventMode ? eventColor : selected && signal ? signal.color : station.light.material.color;
   station.light.material.emissive.set(color);
   station.screen.emissive.set(color);
-  station.light.material.emissiveIntensity = selected ? .52 : .06;
-  station.screen.emissiveIntensity = selected ? .30 : .12;
+  const lit = selected || eventMode;
+  station.light.material.emissiveIntensity = lit ? .52 : .06;
+  station.screen.emissiveIntensity = lit ? .30 : .12;
   station.approach.emissive.set(color);
   station.approach.emissiveIntensity = selected ? .68 : 0;
   if (station.control) {
@@ -474,12 +516,17 @@ function showStationSignal(target) {
     station.control.position.z = selected && phase === 'submitted' ? station.z+.919 : station.z+.935;
    }
   }
-  if (selected && job) {
+  showRingReceipt(station,eventStatus);
+  if (eventMode) {
+   const label = {posted:'EVENT POSTED',ready:'IRQ READY',read:'DRIVER READ'}[eventStatus.phase];
+   const action = {posted:'WAIT FOR IRQ',ready:'H READ EVENT · R RINGS',read:eventCode.toUpperCase()}[eventStatus.phase];
+   station.display(label,color,action);
+  } else if (selected && job) {
    const action = {
     queued: job.ring === 'cmd' ? 'B  DOORBELL 0' : 'B  SLOT 1 / EP0',
     submitted: job.name,
     returning: 'WAIT FOR IRQ',
-    ready: 'H  READ EVENT',
+    ready: 'H READ EVENT · R RINGS',
     stalled: 'R  INSPECT RING'
    }[phase];
    station.display(phase === 'queued' ? job.name.toUpperCase() : displayStates[phase],color,action);
@@ -511,6 +558,18 @@ let contextDraft = null;
 let addressContext = null;
 let successfulCompletions = 0;
 let addressFailure = '';
+const lastRingReceipts = new Map();
+
+function eventDeskStatus() {
+ const ring = ringData.event;
+ const head = ring.entries[ring.deq];
+ if (job && ring.enqueue>ring.dequeue && head?.id===job.id && ['returning','ready'].includes(job.phase)) {
+  return {phase:job.irqPending?'ready':'posted',entry:head};
+ }
+ const receipt = lastRingReceipts.get('event');
+ return receipt ? {phase:'read',entry:receipt} : {phase:'idle',entry:null};
+}
+
 const shiftEndpointBytes = Object.freeze([7,5,0x81,2,0,2,0]);
 const shiftEndpointRing = '0x9000';
 let endpointDescriptorBuffer = null;
@@ -850,6 +909,8 @@ function holdFaultParcel() {
 }
 
 function submit(def){
+ lastRingReceipts.delete(missions[step][0]);
+ lastRingReceipts.delete('event');
  job={...def,id:++serial,phase:'queued',time:0,consumed:0,source:step};
  job.trbs=def.types.map(type=>pushTRB(ringData[def.ring],type,serial));
  const input = step === 4 ? addressContext : step === 9 ? configureContext : null;
@@ -920,10 +981,17 @@ function tickJob(dt){
 }
 function handleCompletion(){
  if(paused||!job?.irqPending)return;
+ const erdpBefore = ringData.event.deq;
  const completion=popTRB(ringData.event);
  if(!completion||completion.id!==job.id)throw Error('Completion correlation');
  log(`Driver IRQ: read #${job.id} ${completion.type}: ${completion.completionCode}; advanced ERDP to entry ${ringData.event.deq}.`);
  const source = job.source;
+ const receipt = Object.freeze({
+  jobId:completion.id,type:completion.type,code:completion.completionCode,slot:completion.slot,
+  erdpBefore,erdpAfter:ringData.event.deq
+ });
+ lastRingReceipts.set(missions[source][0],receipt);
+ lastRingReceipts.set('event',receipt);
  clearParcels();
  job = null;
  route = [];
@@ -1083,6 +1151,7 @@ $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
 function reset(){
+ lastRingReceipts.clear();
  shiftRootPort = shiftSlotId = contextDraft = addressContext = null;
  endpointDescriptorBuffer = observedEndpointDescriptor = endpointDraft = configureContext = configuredEndpoint = null;
  configureObserved = usbConfigurationObserved = false;
