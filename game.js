@@ -705,7 +705,7 @@ function nextEntry() {
 function inspectTRB(){updateRings();const r=ringData[inspectRing],t=r.entries[inspectIndex];message(`${inspectRing}[${inspectIndex}] ${t?`${t.type} | Cycle=${t.cycle} | job=${t.id} | Slot=${t.slot} EP=${t.endpoint} | ${t.pointer}`:'empty'} | consumer head CCS=${r.ccs}. [I] next entry [O] next ring [F] publish expected Cycle at stalled head.`)}
 function repairCycle(){if(paused||!job||job.phase!=='stalled')return;const r=ringData[job.ring];if(inspectRing!==job.ring||inspectIndex!==r.deq){message('当前条目不是卡住的消费头。比对 Transfer Ring 的 DEQ 与 CCS，再选择该条目。');return}r.entries[r.deq].cycle=r.ccs;
  const repaired = parcels.find(parcel => parcel.index === job.consumed);
- repaired?.o.material.color?.set(r.color);
+ repaired?.setState('repaired');
  job.repairedHead = job.consumed;
  job.phase='submitted';log('Cycle repaired and published; endpoint doorbell rung again.');updateRings();inspectTRB()}
 const submissions={1:{ring:'cmd',name:'Enable Slot',types:['Enable Slot'],event:'Command Completion',slot:1},4:{ring:'cmd',name:'Address Device',types:['Address Device · BSR=0'],event:'Command Completion',slot:1},6:{ring:'transfer',name:'GET_DESCRIPTOR',types:['Setup · GET_DESCRIPTOR','Data · IN','Status · OUT · IOC'],event:'Transfer Event',slot:1},9:{ring:'cmd',name:'Configure Endpoint',types:['Configure Endpoint · DC=0'],event:'Command Completion',slot:1},11:{ring:'transfer',name:'SET_CONFIGURATION',types:['Setup · SET_CONFIGURATION(1)','Status · IN · IOC'],event:'Transfer Event',slot:1}};
@@ -756,7 +756,7 @@ function updateRings(){
 
 function setParcelPosition(parcel, x, z, height = 1.56) {
  parcel.o.position.set(x,height,z);
- parcel.label.position.set(x,height+.34,z);
+ parcel.label.position.set(x,height+.275,z);
 }
 
 function stageParcel(parcel) {
@@ -764,6 +764,7 @@ function stageParcel(parcel) {
  setParcelPosition(parcel,ring.dockX,ring.dockZ+.42*parcel.index);
  parcel.o.visible = true;
  parcel.label.visible = parcel.index === 0;
+ parcel.setState('waiting');
 }
 
 function placeParcel(parcel, progress) {
@@ -787,27 +788,25 @@ function placeParcel(parcel, progress) {
  setParcelPosition(parcel,ring.cx-5+10*travel,ring.cz+2);
 }
 
-function spawn(ring,label,index=0) {
- const r = ringData[ring];
- const body = box(0,1.5,0,.54,.32,.36,mat(r.color,.33));
- const tag = sign(label,0,0,0,'#'+r.color.toString(16),1.24);
- // Moving TRBs rely on Local light; the static yard shadow map is baked at load.
- body.castShadow = false;
- const parcel = {o:body,label:tag,ring,index};
+function spawn(ring,trb,index=0) {
+ const cargo = createTRBCargo(ring,trb);
+ const parcel = {
+  o:cargo.body,label:cargo.label,ring,index,completionCode:trb.completionCode,
+  setState:cargo.setState,dispose:cargo.dispose
+ };
+ scene.add(parcel.o,parcel.label);
  parcels.push(parcel);
- if (ring === 'event') placeParcel(parcel,0);
- else stageParcel(parcel);
+ if (ring === 'event') {
+  placeParcel(parcel,0);
+  parcel.setState(trb.completionCode==='Success'?'posted':'error-posted');
+ } else stageParcel(parcel);
  return parcel;
 }
 
 function clearParcels() {
  for (const parcel of parcels) {
   scene.remove(parcel.o,parcel.label);
-  parcel.o.geometry.dispose();
-  parcel.o.material.dispose();
-  parcel.label.geometry.dispose();
-  parcel.label.material.map.dispose();
-  parcel.label.material.dispose();
+  parcel.dispose();
  }
  parcels.length = 0;
 }
@@ -826,7 +825,10 @@ function moveSubmittedParcels() {
    stageParcel(parcel);
    continue;
   }
-  parcel.o.visible = parcel.label.visible = true;
+  parcel.o.visible = true;
+  parcel.label.visible = parcel.index === job.consumed;
+  const repaired = job.repairedHead === parcel.index && job.time < .72;
+  parcel.setState(repaired ? 'repaired' : 'moving');
   const progress = offsetTime/2;
   const repairedProgress = job.repairedHead === parcel.index ? cycleStopProgress+progress*(1-cycleStopProgress) : progress;
   placeParcel(parcel,Math.min(repairedProgress,1));
@@ -840,8 +842,7 @@ function holdFaultParcel() {
   } else if (parcel.index === job.consumed) {
    parcel.o.visible = parcel.label.visible = true;
    placeParcel(parcel,cycleStopProgress);
-   parcel.o.material.color?.set(0xff744e);
-   parcel.label.position.y = 2.13;
+   parcel.setState('held');
   } else {
    stageParcel(parcel);
   }
@@ -857,7 +858,7 @@ function submit(def){
   job.trbs[0].slot = input.slot;
  }
  if(step===6)job.trbs[0].cycle^=1;
- job.types.forEach((type,i)=>spawn(job.ring,`#${job.id} ${type}`,i));
+ job.trbs.forEach((trb,index)=>spawn(job.ring,trb,index));
  log(`Host queued #${serial} ${def.name}; waiting for doorbell.`);
  message('TRBs are in memory. Press B to notify xHC.');
  updateRings();
@@ -909,13 +910,13 @@ function tickJob(dt){
     endpointDescriptorBuffer = {job:job.id,bytes:shiftEndpointBytes};
     result.descriptorBytes = endpointDescriptorBuffer.bytes;
    }
-   spawn('event',`#${job.id} ${job.event} · ${result.completionCode.toUpperCase()}`);
+   spawn('event',result);
    job.phase='returning';
    job.time=0;
    log(`xHC consumed #${job.id}; produced ${job.event}.`);
    update();
   }
- }else if(job.phase==='returning'){placeParcel(parcels[0],Math.min(.82,job.time/1.2*.82));if(job.time>=1.2){job.phase='ready';job.irqPending=true;playYardCue('event');log(`#${job.id} xHC raised IRQ after writing the Event Ring.`);message('IRQ received. Press H to step through the driver handler and advance ERDP.');updateRings();}}
+ }else if(job.phase==='returning'){placeParcel(parcels[0],Math.min(.82,job.time/1.2*.82));if(job.time>=1.2){job.phase='ready';job.irqPending=true;const cargo=parcels[0];cargo.setState(cargo.completionCode==='Success'?'ready':'error-ready');playYardCue('event');log(`#${job.id} xHC raised IRQ after writing the Event Ring.`);message('IRQ received. Press H to step through the driver handler and advance ERDP.');updateRings();}}
 }
 function handleCompletion(){
  if(paused||!job?.irqPending)return;
