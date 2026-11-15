@@ -1,6 +1,6 @@
 'use strict';
 
-const yardDrumReflection = {value:new THREE.Vector4()};
+const yardDrumReflection = {value:new THREE.Vector4(0,0,0,0)};
 const yardDrumEnabled = {value:1};
 
 function registerYardDrumReflection(x,z,bounds) {
