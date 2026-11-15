@@ -27,6 +27,33 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
   await commissioning.locator('.current-action').click();
   assert.equal(await commissioning.count(), 0);
 
+  const sourceCases = new Map([[0,'port'], [1,'cmd'], [2,'event'], [6,'transfer']]);
+  const {driverPrograms} = require('../driver-sim.js');
+  const checkCode = async (kind, apply = false) => {
+   await page.locator('#code-workbench').click();
+   const dialog = page.locator('#driver-workbench');
+   const editor = dialog.getByRole('textbox', {name:'编辑模拟代码'});
+   const run = dialog.getByRole('button', {name:'运行模拟'});
+   const status = dialog.getByRole('status');
+   await run.click();
+   assert.match(await status.innerText(), /故障仍在/);
+   await editor.fill('alert(1);');
+   await run.click();
+   assert.match(await status.innerText(), /语法错误/);
+   await editor.fill(driverPrograms[kind].repair);
+   await run.click();
+   assert.match(await status.innerText(), /运行成功/);
+   assert.match(await dialog.getByRole('link').getAttribute('href'), /torvalds\/linux\/blob\/[a-f0-9]{40}\//);
+   if (apply && process.env.RINGWORKS_CAPTURE_DIR) await page.screenshot({
+    path: process.env.RINGWORKS_CAPTURE_DIR + '/driver-repair.png'
+   });
+   await dialog.getByRole('button', {name: apply ? /应用到模拟器/ : '返回工位'}).click();
+  };
+  const audio = page.locator('#yard-audio');
+  await audio.click();
+  await page.waitForFunction(() => document.getElementById('yard-audio').getAttribute('aria-pressed') === 'true');
+  await audio.click();
+  await page.waitForFunction(() => document.getElementById('yard-audio').getAttribute('aria-pressed') === 'false');
   const action = page.locator('#guide');
   const expected = [
    '重置 USB2 根端口', '提交 Enable Slot', '领取 Slot ID', '准备设备上下文',
@@ -44,7 +71,8 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
    }, {index, label}, {timeout: 45000});
    let text = await match.jsonValue();
    while (!text.startsWith(label)) {
-    await action.click();
+    if (text.startsWith('修复 Cycle')) await checkCode('transfer', true);
+    else await action.click();
     const next = await page.waitForFunction(({label, previous}) => {
      const {textContent, disabled} = document.querySelector('#guide');
      if (disabled || textContent === previous) return false;
@@ -53,6 +81,10 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
     }, {label, previous: text}, {timeout: 45000});
     text = await next.jsonValue();
    }
+   if (index === 0 && process.env.RINGWORKS_CAPTURE_DIR) await page.screenshot({
+    path: process.env.RINGWORKS_CAPTURE_DIR + '/freight-yard.png'
+   });
+   if (sourceCases.has(index)) await checkCode(sourceCases.get(index));
    await action.click();
    console.log(`PASS mouse step ${index + 1}: ${label}`);
   }
