@@ -96,6 +96,7 @@ const {chromium} = require(process.env.PLAYWRIGHT_MODULE || 'playwright');
    });
    if (sourceCases.has(index)) await checkCode(sourceCases.get(index));
    await action.click();
+   if (index===0) await page.waitForFunction(()=>step===1&&rootPortStatus().ped);
    if ([1, 4, 6, 9, 11].includes(index)) {
     await page.getByRole('button', {name: '写门铃（B）', exact: true}).click();
    }

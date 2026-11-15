@@ -19,6 +19,7 @@ for(let stage=0;stage<14;stage++){
    console.log('PASS scene-only mode from root port to command station');
   }
   await page.keyboard.press('KeyE');
+  if(stage===0)await page.waitForFunction(()=>step===1&&rootPortStatus().ped);
   if([1,4,6,9,11].includes(stage)){
    assert.match(await page.locator('#rings').textContent(),/: queued/);
    assert.match(await page.locator('#rings .trb-changed').allTextContents().then(v=>v.join(' ')),/ENQ/);

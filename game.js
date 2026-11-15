@@ -367,7 +367,7 @@ const displayStates = {
 
 function station(id,name,x,z,color){
  const finish = cabinetFinishes[id] ?? dark;
- let control;
+ let control,connectionLens;
  foldedBox(x,.96,z,1.6,1.68,1.2,.045,finish);
  solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
@@ -393,6 +393,8 @@ function station(id,name,x,z,color){
   }
   flangeBolt(x-.95,.17,z+.638,.032);
   controlLens(x-.955,.90,z+.742,.055,.030,stripeMetal);
+  connectionLens = controlLens(x-.48,1.02,z+.823,.025,.018,
+   new THREE.MeshStandardMaterial({color:0xca994e,emissive:0xffc46c,emissiveIntensity:0,roughness:.55}));
   control = controlLens(x+.48,.99,z+.825,.053,.025,
    new THREE.MeshStandardMaterial({color:0x819a60,emissive:0xa6c88c,emissiveIntensity:.1,roughness:.42}));
  } else if(id==='event'){
@@ -497,7 +499,7 @@ function station(id,name,x,z,color){
   }
  }
  stations.push({
-  id,name,x,z,light,screen,display,approach,control,receiptDisplay,
+  id,name,x,z,light,screen,display,approach,control,connectionLens,receiptDisplay,
   ringReceipt:receiptDisplay?.mesh
  });
 }
@@ -518,6 +520,7 @@ let lastLitPhase;
 let lastDeparture;
 let lastSignalStep;
 let lastCycleDiagnosticKey;
+let lastRootPortPhase;
 const yardDestinationLabel = {
  port:'ROOT PORT',cmd:'COMMAND QUEUE',ctx:'CONTEXT BENCH',
  transfer:'EP0 DISPATCH',event:'IRQ DESK',exit:'SHIFT CLOCK'
@@ -565,8 +568,10 @@ function showStationSignal(target) {
  const departure = running && step > 0 && !job && near?.id !== stationId ? near?.id : undefined;
  const diagnosis = cycleDiagnosticStatus();
  const diagnosticKey = diagnosis ? Object.values(diagnosis).join('|') : '';
+ const port = rootPortStatus();
  if (stationId === lastLitStation && phase === lastLitPhase && departure === lastDeparture &&
-     step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey) return;
+     step === lastSignalStep && diagnosticKey === lastCycleDiagnosticKey && port.phase === lastRootPortPhase) return;
+ lastRootPortPhase = port.phase;
  lastCycleDiagnosticKey = diagnosticKey;
  lastLitStation = stationId;
  lastLitPhase = phase;
@@ -588,8 +593,16 @@ function showStationSignal(target) {
   station.screen.emissiveIntensity = lit ? .30 : .12;
   station.approach.emissive.set(color);
   station.approach.emissiveIntensity = selected ? .68 : 0;
+  if (station.connectionLens) {
+   station.connectionLens.material.emissiveIntensity = port.ccs ? .52 : 0;
+  }
   if (station.control) {
-   const activeControl = station.id === 'port' ? step > 0 : selected && phase === 'queued';
+   const activeControl = station.id === 'port' ? port.pr || port.ped : selected && phase === 'queued';
+   if (station.id==='port') {
+    const tint = port.pr ? 0x71c5ee : 0xa6c88c;
+    station.control.material.color.setHex(tint);
+    station.control.material.emissive.setHex(tint);
+   }
    station.control.material.emissiveIntensity = activeControl ? .72 : .12;
    if (station.id === 'cmd') {
     station.control.position.z = selected && phase === 'submitted' ? station.z+.919 : station.z+.935;
@@ -600,6 +613,12 @@ function showStationSignal(target) {
    const label = {posted:'EVENT POSTED',ready:'IRQ READY',read:'DRIVER READ'}[eventStatus.phase];
    const action = {posted:'WAIT FOR IRQ',ready:'H READ EVENT · R RINGS',read:eventCode.toUpperCase()}[eventStatus.phase];
    station.display(label,color,action);
+  } else if (station.id==='port' && selected && port.phase!=='unavailable') {
+   if (port.pr) {
+    station.display('RESET SIGNALING',0x9cd7ef,`PR=${Number(port.pr)} · PED=${Number(port.ped)}`,'WAIT FOR PED');
+   } else {
+    station.display('USB2 CONNECTED',0xe9d3a0,`CCS=${Number(port.ccs)} CSC=${Number(port.csc)} PED=${Number(port.ped)}`,'E RESET USB2');
+   }
   } else if (selected && job) {
    const action = {
     queued: job.ring === 'cmd' ? 'B  DOORBELL 0' : 'B  SLOT 1 / EP0',
@@ -618,10 +637,12 @@ function showStationSignal(target) {
    const contextAction = step===8 ? 'E  BUILD EP CONTEXT' : action;
    station.display(command?.toUpperCase() ?? title,color,
     command ? 'E  QUEUE TRB' : contextAction);
+  } else if (station.id === departure && station.id==='port' && port.ped) {
+   station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0,'USB2 PORT READY',rootPortCompletionBits(port));
   } else if (station.id === departure) {
-   station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0,station.id === 'port' ? 'USB2 PORT READY' : '');
-  } else if (station.id === 'port' && step > 0) {
-   station.display('USB2 PORT READY',0xb7d6a6);
+   station.display(`NEXT: ${yardDestinationLabel[stationId]}`,0xe9d3a0);
+  } else if (station.id === 'port' && port.ped) {
+   station.display('USB2 PORT READY',0xb7d6a6,rootPortCompletionBits(port));
   } else station.display('STANDBY',0x75888d);
  }
  // Aim the hood light across the controls and the cabinet face.
@@ -632,6 +653,63 @@ function showStationSignal(target) {
 }
 const missions=[['port','Inspect the USB2 root port','Read CCS=1 and CSC=1. Reset the attached USB2 port.','§4.3.1 · xhci_hub_control()','Port reset completed: PED=1. Device: Default.'],['cmd','Submit Enable Slot','Host driver: queue Enable Slot (E), then write Doorbell 0 (B).','§4.3.2 · xhci_alloc_dev()','Enable Slot submitted. Completion waiting on Event Ring.'],['event','Collect the Slot ID','The xHC chose the Slot ID. Collect its Command Completion Event.','§4.3.2 · xhci_handle_command()','Success: Slot ID=1, slot Enabled.'],['ctx','Prepare the device contexts','Set A0/A1, Slot Context, EP0 ring and DCBAA[1].','§4.3.3 · xhci_setup_addressable_virt_dev()','A0=A1=1; route=0; port=1; entries=1; EP0 Control, MPS=64 (HS), DCS=1; DCBAA[1] ready.'],['cmd','Submit Address Device','Context ready. Submit Address Device with BSR=0.','§4.3.4 · xhci_address_device()','Address Device queued. xHC performs SET_ADDRESS.'],['event','Wait for address completion','Do not submit more slot commands until completion is received.','§4.3.4 · Command Completion Event','Address Device success. Device and slot: Addressed.'],['transfer','Request the descriptors','Queue GET_DESCRIPTOR on EP0: Setup, Data, Status stages. Ring the endpoint doorbell.','§4.3 overview · xhci_queue_ctrl_tx()','Control TD submitted on EP0. This is a transfer, not a command.'],['event','Collect the descriptor transfer','Consume a Transfer Event. The descriptors describe the device’s endpoints.','§4.3 · handle_tx_event()','Descriptor transfer complete. Configuration 1 selected by software.'],['ctx','Prepare endpoint configuration','Build matching endpoint contexts and transfer rings for the selected configuration.','§4.3.5 · xhci_add_endpoint()','Endpoint contexts prepared for configuration 1.'],['cmd','Reserve controller resources','Issue Configure Endpoint before sending SET_CONFIGURATION.','§4.3.5 · xhci_check_bandwidth()','Configure Endpoint queued. Waiting for controller acceptance.'],['event','Confirm endpoint configuration','Collect Configure Endpoint completion before configuring the USB device.','§4.3.5 · Command Completion Event','Configure Endpoint success. Slot Configured; USB device still Addressed.'],['transfer','Configure the USB device','Send SET_CONFIGURATION(1) through EP0. The device must match the controller.','§4.3.5 · xhci_queue_ctrl_tx()','SET_CONFIGURATION queued as a control transfer.'],['event','Synchronize the two states','Collect the transfer completion. Both sides must agree before using data endpoints.','§4.3.5 · Transfer Event','Success. USB device and xHC slot both Configured.'],['exit','Clock out of your first shift','The factory is running. Return to the shift clock.','§4.3.1–5 complete','SHIFT COMPLETE']];let step=0,running=false,paused=true,yaw=0,pitch=0,near=null,keys={},elapsed=0,job=null,serial=0,route=[],finished=false;
 let shiftRootPort = null;
+let rootPortResetElapsed = 0;
+let skipRootPortFrame = false;
+const rootPortResetDuration = 1;
+
+function initializeShiftRootPort() {
+ if (!shiftRootPort && startup.ready && typeof RootPortLab !== 'undefined') {
+  shiftRootPort = new RootPortLab();
+  shiftRootPort.attach('High');
+ }
+}
+
+function rootPortStatus() {
+ const port = shiftRootPort;
+ return {
+  phase:!port ? 'unavailable' : port.pr ? 'resetting' : port.ped ? 'enabled' : 'connected',
+  ccs:Boolean(port?.ccs),csc:port?.changes.has('CSC') ?? false,
+  pr:Boolean(port?.pr),ped:Boolean(port?.ped),prc:port?.changes.has('PRC') ?? false
+ };
+}
+
+function rootPortCompletionBits(port) {
+ return `PR=${Number(port.pr)} PED=${Number(port.ped)} PRC=${Number(port.prc)}`;
+}
+
+function requestShiftRootPortReset() {
+ initializeShiftRootPort();
+ if (!shiftRootPort) return;
+ if (shiftRootPort.pr) {
+  message('USB2 reset in progress. Wait for PORTSC.PED.');
+  return;
+ }
+ const result = shiftRootPort.requestReset();
+ if (!shiftRootPort.pr) {
+  message(result);
+  return;
+ }
+ rootPortResetElapsed = 0;
+ log('Driver requested USB2 reset: PORTSC.PR=1, PED=0.');
+ message('USB2 reset signaling. Wait for PORTSC.PED.');
+}
+
+function tickRootPortReset(dt) {
+ if (!shiftRootPort) initializeShiftRootPort();
+ if (paused || document.hidden || !shiftRootPort?.pr) return;
+ rootPortResetElapsed += dt;
+ if (rootPortResetElapsed < rootPortResetDuration) return;
+ const result = shiftRootPort.completeReset();
+ if (!shiftRootPort.ped) {
+  message(result);
+  return;
+ }
+ const completion = `USB2 reset completed · ${rootPortCompletionBits(rootPortStatus())} · ${shiftRootPort.speed} Speed.`;
+ log(completion);
+ message(completion);
+ advance();
+}
+
 let shiftSlotId = null;
 let contextDraft = null;
 let addressContext = null;
@@ -890,7 +968,7 @@ function log(entry) {
 function message(s){$('message').textContent=s}
 const missionArc=[0,1,1,2,3,3,4,4,5,5,5,5,5,5];
 const arcNames=['端口复位','启用 Slot','准备设备上下文','分配地址','读取描述符','配置设备'];
-function update(){const m=missions[step];$('mission-arc').textContent=`02 / 工位实操 · ${missionArc[step]+1}/6 ${arcNames[missionArc[step]]}`;$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${step>0?'ENABLED':'ATTACHED'}\nSLOT ${configuredEndpoint?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${usbConfigurationObserved?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
+function update(){const m=missions[step];$('mission-arc').textContent=`02 / 工位实操 · ${missionArc[step]+1}/6 ${arcNames[missionArc[step]]}`;$('task').textContent=m[1];$('hint').textContent=m[2];$('progress').textContent=`${String(step+1).padStart(2,'0')} / ${missions.length} · ${m[3]}`;$('ledger').textContent=`PORT ${shiftRootPort?.ped?'ENABLED':shiftRootPort?.pr?'RESETTING':'ATTACHED'}\nSLOT ${configuredEndpoint?'CONFIGURED':step>=6?'ADDRESSED':step>=3?'ENABLED':'NONE'}\nDEVICE ${usbConfigurationObserved?'CONFIGURED':step>=6?'ADDRESSED':step>0?'DEFAULT':'POWERED'}`;$('ledger').style.whiteSpace='pre-line';updateRings()}
 function updateRings(){
  const phase = job?.phase;
  const status = $('controller-status');
@@ -1143,12 +1221,7 @@ function handleCompletion(){
  advance();
 }
 function advance(){step++;update()}
-function interact(){if(paused||!near||finished)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(step===0){
- shiftRootPort = new RootPortLab();
- shiftRootPort.attach('High');
- shiftRootPort.requestReset();
- shiftRootPort.completeReset();
-}
+function interact(){if(paused||!near||finished)return;if(!startup.ready){message('Complete controller startup at the commissioning panel first.');return}const m=missions[step];if(near.id!==m[0]){message(`${near.name}: ${m[1]} first. No work was submitted.`);return}if(step===0){requestShiftRootPortReset();update();return}
 if(step===3){applyAddressContext();return}
 if(step===8){applyEndpointContext();return}
 if(submissions[step]){
@@ -1229,7 +1302,10 @@ function updateNextAction(target) {
  const stage = `2 · 工位任务 ${step + 1}/${missions.length} · ${stationLabel}`;
  if ($('next-stage').textContent !== stage) $('next-stage').textContent = stage;
  let instruction, label, action;
- if (job?.phase === 'stalled') {
+ if (step===0 && shiftRootPort?.pr) {
+  instruction = 'PR=1，PED=0。等待 USB2 复位完成。';
+  label = 'USB2 复位中…';
+ } else if (job?.phase === 'stalled') {
   instruction = '对照右侧 Transfer Ring 的 DEQ 和 CCS，用 O / I 选中卡住的 TRB。';
   label = '修复 Cycle 位（F）';
   action = repairCycle;
@@ -1266,6 +1342,8 @@ $('guide').onclick = () => nextAction?.();
 $('next-ring').onclick = nextRing;
 $('next-entry').onclick = nextEntry;
 function reset(){
+ rootPortResetElapsed = 0;
+ skipRootPortFrame = false;
  cycleDiagnosticFeedback = '';
  lastRingReceipts.clear();
  shiftRootPort = shiftSlotId = contextDraft = addressContext = null;
@@ -1399,12 +1477,14 @@ function frame() {
   const steps = Math.max(1, Math.ceil(frameTime / .06));
   const dt = frameTime / steps;
   for (let index = 0; index < steps; index++) {
+   if (!skipRootPortFrame) tickRootPortReset(dt);
    tickJob(dt);
    const target = stations.find(station => station.id === missions[step][0]);
    if (route.length) followRoute(dt, target);
    else moveWithKeys(dt);
   }
  }
+ skipRootPortFrame = false;
  camera.position.copy(position);
  camera.rotation.set(pitch,yaw,0);
  near = null;
@@ -1430,6 +1510,7 @@ function frame() {
  for (const parcel of parcels) parcel.label.quaternion.copy(camera.quaternion);
  renderer.render(scene,camera);
 }
+document.addEventListener('visibilitychange',()=>{skipRootPortFrame=true;});
 window.onresize = () => {
  camera.aspect = innerWidth/innerHeight;
  camera.updateProjectionMatrix();
@@ -1469,6 +1550,7 @@ let startupFeedback = '';
 
 function showStartup(){
  if (startup.ready) {
+  initializeShiftRootPort();
   const commissioning = $('commission');
   if (commissioning) {
    commissioning.remove();
