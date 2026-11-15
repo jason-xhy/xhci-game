@@ -84,18 +84,32 @@ function servicePaint() {
  texture.colorSpace = THREE.SRGBColorSpace;
  return texture;
 }
+function repeatFinish(texture, isColor = false) {
+ texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+ texture.anisotropy = Math.min(6,renderer.capabilities.getMaxAnisotropy());
+ if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
+ return texture;
+}
+function finishNoise(x,y) {
+ const hash = Math.imul(x+37,1597334677) ^ Math.imul(y+29,3812015801);
+ return ((hash ^ hash>>>15)>>>0)/4294967295;
+}
 function brushedFinish() {
  const canvas = document.createElement('canvas');
  canvas.width = 128;
  canvas.height = 64;
- const context = canvas.getContext('2d');
- context.fillStyle = '#a9a9a9';
- context.fillRect(0,0,128,64);
+ const ink = canvas.getContext('2d');
+ ink.fillStyle = '#c0c0c0';
+ ink.fillRect(0,0,128,64);
  for (let y=0; y<64; y++) {
-  context.fillStyle = y%7 < 2 ? '#969696' : '#b3b3b3';
-  context.fillRect(y*23%31,y,80+y*13%18,1);
+  const tone = Math.round(192+(finishNoise(5,y)-.5)*29);
+  ink.fillStyle = `rgb(${tone},${tone},${tone})`;
+  const startsAt = Math.round(finishNoise(9,y)*79);
+  const length = 31+Math.round(finishNoise(14,y)*54);
+  ink.fillRect(startsAt,y,length,1);
+  if (startsAt+length > 128) ink.fillRect(0,y,startsAt+length-128,1);
  }
- return new THREE.CanvasTexture(canvas);
+ return repeatFinish(new THREE.CanvasTexture(canvas));
 }
 
 const enamel = new THREE.MeshStandardMaterial({
@@ -105,49 +119,94 @@ applyYardMaterial(enamel, 'blue_metal_plate', 1, 0xd4dfdf, .32);
 const brass = new THREE.MeshStandardMaterial({color:0xb89462, roughness:.42, metalness:.7});
 const brushed = brushedFinish();
 const connectorMetal = new THREE.MeshStandardMaterial({
- color:0xc4cbd0, roughness:.48, roughnessMap:brushed,
- bumpMap:brushed, bumpScale:.002, metalness:.57
+ color:0xc1c7ca, roughness:.70, roughnessMap:brushed,
+ bumpMap:brushed, bumpScale:.00065, metalness:.49
 });
-function paintedCabinetMap(roughness) {
+connectorMetal.userData.finishTileMeters = .24;
+
+function lacquerTexture(roughness) {
  const canvas = document.createElement('canvas');
- canvas.width = canvas.height = 192;
- const context = canvas.getContext('2d');
- const surfaceTone = context.createLinearGradient(0,0,185,192);
- surfaceTone.addColorStop(0,roughness ? '#b6b6b6' : '#e7e5e1');
- surfaceTone.addColorStop(.56,roughness ? '#cdcdcd' : '#f0efec');
- surfaceTone.addColorStop(1,roughness ? '#a3a3a3' : '#dcdbd7');
- context.fillStyle = surfaceTone;
- context.fillRect(0,0,192,192);
- // Local handling marks and a little dirt near the cover's lower edge.
- context.fillStyle = roughness ? '#96969690' : '#73706c39';
- for (const [x,y,w] of [[11,145,12],[16,147,7],[19,150,5],[166,142,9],[169,145,6],[147,175,14],[22,181,22]]) {
-  context.fillRect(x,y,w,1);
+ const size = 256;
+ canvas.width = canvas.height = size;
+ const ink = canvas.getContext('2d');
+ const image = ink.createImageData(size,size);
+ // About 2 mm per texel. The slight larger-scale drift is the paint finish,
+ // while isolated contact damage is placed on the assembled part.
+ for (let y=0; y<size; y++) for (let x=0; x<size; x++) {
+  const grain = finishNoise(x,y)-.5;
+  const drift = (Math.sin(x*Math.PI/64+y*Math.PI/128) + Math.sin(y*Math.PI/64-x*Math.PI/128))*.25;
+  const tone = Math.round(roughness ? 198+grain*32+drift*13 : 232+grain*10+drift*5);
+  const index = (y*size+x)*4;
+  image.data[index] = image.data[index+1] = image.data[index+2] = tone;
+  image.data[index+3] = 255;
  }
- const lowerEdge = context.createLinearGradient(0,151,0,192);
- lowerEdge.addColorStop(0,'#00000000');
- lowerEdge.addColorStop(1,roughness ? '#52525249' : '#26221c31');
- context.fillStyle = lowerEdge;
- context.fillRect(0,151,192,41);
- const map = new THREE.CanvasTexture(canvas);
- if (!roughness) map.colorSpace = THREE.SRGBColorSpace;
- return map;
+ ink.putImageData(image,0,0);
+ return repeatFinish(new THREE.CanvasTexture(canvas),!roughness);
 }
-const paintedColor = paintedCabinetMap(false);
-const paintedRoughness = paintedCabinetMap(true);
+const paintedColor = lacquerTexture(false);
+const paintedRoughness = lacquerTexture(true);
 const cabinetFinishes = Object.fromEntries(
- Object.entries({port:0x58746b,cmd:0x66645b,transfer:0x4f687d}).map(([id,color])=>[
-  id,new THREE.MeshStandardMaterial({
-   color,map:paintedColor,roughnessMap:paintedRoughness,roughness:.91,metalness:.15
-  })
- ]));
+ Object.entries({port:0x58746b,cmd:0x66645b,transfer:0x4f687d}).map(([id,color])=>{
+  const finish = new THREE.MeshStandardMaterial({
+   color,map:paintedColor,roughnessMap:paintedRoughness,roughness:.93,
+   bumpMap:paintedRoughness,bumpScale:.00036,metalness:.09
+  });
+  finish.userData.finishTileMeters = .48;
+  return [id,finish];
+ }));
+const cabinetContactMarks = [];
+function addCabinetContactWear(x,z,variant) {
+ // All marks sit on front surfaces: the cabinet skin or the flat cover face.
+ cabinetContactMarks.push(
+  [x-.726,1.49-variant*.08,z+.601,.048,.018,.91],
+  [x+.716,.28+variant*.045,z+.601,.069,.021,-1.12],
+  [x-.588,.607,z+.664,.075,.021,-.18+variant*.09],
+  [x+.178,.615,z+.664,.061,.015,.05+variant*.063],
+  [x+.588,.239,z+.664,.084,.021,.14-variant*.09]
+ );
+}
+function buildCabinetContactWear() {
+ const canvas = document.createElement('canvas');
+ canvas.width = 128;
+ canvas.height = 48;
+ const ink = canvas.getContext('2d');
+ ink.fillStyle = '#54514a';
+ ink.beginPath();
+ ink.moveTo(3,28);
+ for (const [x,y] of [[15,20],[31,21],[36,15],[56,14],[62,18],[87,13],[99,19],[122,17],[116,25],[95,27],[76,25],[63,32],[40,31],[31,29],[14,33]]) ink.lineTo(x,y);
+ ink.closePath();
+ ink.fill();
+ ink.fillStyle = '#8e8c82';
+ for (let i=0; i<26; i++) {
+  const x = 11+Math.floor(finishNoise(i,61)*102);
+  const y = 20+Math.floor(finishNoise(i,72)*9);
+  ink.fillRect(x,y,2+Math.floor(finishNoise(i,83)*9),1);
+ }
+ const map = new THREE.CanvasTexture(canvas);
+ map.colorSpace = THREE.SRGBColorSpace;
+ const material = new THREE.MeshStandardMaterial({map,alphaTest:.42,roughness:.74,metalness:.37});
+ const marks = new THREE.InstancedMesh(new THREE.PlaneGeometry(1,1),material,cabinetContactMarks.length);
+ marks.name = 'Hero cabinet contact wear';
+ marks.receiveShadow = true;
+ const transform = new THREE.Object3D();
+ cabinetContactMarks.forEach(([x,y,z,width,height,angle],index)=>{
+  transform.position.set(x,y,z);
+  transform.rotation.z = angle;
+  transform.scale.set(width,height,1);
+  transform.updateMatrix();
+  marks.setMatrixAt(index,transform.matrix);
+ });
+ scene.add(marks);
+}
 const insulation = new THREE.MeshStandardMaterial({color:0x18252b, roughness:.88});
 const panelSeam = new THREE.MeshStandardMaterial({color:0x273431, roughness:.72});
 const footRubber = new THREE.MeshStandardMaterial({color:0x181d1d,roughness:1});
 const stripeMetal = new THREE.MeshStandardMaterial({color:0x76756f,roughness:.43,metalness:.6});
 const faceMetal = new THREE.MeshStandardMaterial({
  color:0x89949a, roughness:.68, roughnessMap:brushed, bumpMap:brushed,
- bumpScale:.0014, metalness:.42
+ bumpScale:.00051, metalness:.35
 });
+faceMetal.userData.finishTileMeters = .43;
 const edgeWear = new THREE.MeshStandardMaterial({color:0xa69f8b,roughness:.58,metalness:.53});
 const lampHousing = new THREE.MeshStandardMaterial({color:0x354246,roughness:.76,metalness:.24});
 
@@ -245,13 +304,14 @@ function foldedBox(x,y,z,width,height,depth,bevel,material) {
   const points = geometry.attributes.position;
   const normal = geometry.attributes.normal;
   const uv = geometry.attributes.uv;
+  const tileMeters = material.userData.finishTileMeters;
   for (let index = 0; index < points.count; index++) {
    const nx = Math.abs(normal.getX(index));
    const ny = Math.abs(normal.getY(index));
    const nz = Math.abs(normal.getZ(index));
-   const px = points.getX(index)/width+.5;
-   const py = points.getY(index)/height+.5;
-   const pz = points.getZ(index)/depth+.5;
+   const px = (points.getX(index)+width*.5)/(tileMeters ?? width);
+   const py = (points.getY(index)+height*.5)/(tileMeters ?? height);
+   const pz = (points.getZ(index)+depth*.5)/(tileMeters ?? depth);
    if (nz >= nx && nz >= ny) uv.setXY(index,px,py);
    else if (nx >= ny) uv.setXY(index,pz,py);
    else uv.setXY(index,px,pz);
@@ -461,6 +521,7 @@ function station(id,name,x,z,color){
  solid.push({x,z,w:1.12,d:.92});
  boltedFeet(x,z);
  serviceDoor(x,z,finish);
+ if (cabinetFinishes[id]) addCabinetContactWear(x,z,['port','cmd','transfer'].indexOf(id));
  if(id==='ctx'){
   box(x,1.02,z,2.58,.13,1.4,steel);
   for(const dx of [-1.12,1.12])box(x+dx,.47,z,.12,1,.22,enamel);
@@ -600,6 +661,7 @@ station('ctx','CONTEXT WORKBENCH',9,-23,0xc6bf91);
 station('transfer','EP0 DISPATCH',9,-5,0x67ccd3);
 station('event','DRIVER IRQ DESK',0,12,0x82c591);
 station('exit','SHIFT CLOCK',0,27,0xc6bf91);
+buildCabinetContactWear();
 addFixedYardSigns();
 buildCabinetBolts();
 
