@@ -99,6 +99,78 @@ function buildYardWear() {
  scene.add(overlay);
 }
 
+function buildYardPerimeter(asphalt, asphaltReady) {
+ const surface = new THREE.PlaneGeometry(280,280);
+ surface.rotateX(-Math.PI/2);
+ surface.translate(0,-.006,-12);
+ // Match the original 68 m slab's world-scale texture at its edge.
+ const points = surface.attributes.position;
+ const uv = surface.attributes.uv;
+ for (let index=0; index<points.count; index++) {
+  uv.setXY(index,(points.getX(index)+34)/68,(34-points.getZ(index))/68);
+ }
+ const material = asphalt.clone();
+ material.onBeforeCompile = shader => {
+  shader.vertexShader = 'varying vec2 yardApronXZ;\n' + shader.vertexShader.replace(
+   '#include <begin_vertex>', '#include <begin_vertex>\nyardApronXZ=position.xz;');
+  shader.fragmentShader = 'varying vec2 yardApronXZ;\n' + shader.fragmentShader.replace(
+   '#include <color_fragment>',
+   `#include <color_fragment>
+    float edge = max(abs(yardApronXZ.x),abs(yardApronXZ.y));
+    float dust = smoothstep(35.0,68.0,edge);
+    diffuseColor.rgb *= mix(vec3(1.0),vec3(0.84,0.80,0.73),dust);`);
+ };
+ const apron = new THREE.Mesh(surface,material);
+ apron.name = 'Yard perimeter pavement';
+ apron.receiveShadow = true;
+ scene.add(apron);
+ asphaltReady.then(()=>{
+  material.map = asphalt.map;
+  material.normalMap = asphalt.normalMap;
+  material.roughnessMap = asphalt.roughnessMap;
+  material.normalScale.copy(asphalt.normalScale);
+  material.roughness = asphalt.roughness;
+  material.color.copy(asphalt.color);
+  material.needsUpdate = true;
+ });
+
+ const curbs = [];
+ const rails = [];
+ for (const [x,z,length,yaw] of [[-39,-8,96,Math.PI/2],[39,-8,96,Math.PI/2],[0,40,78,0],[0,-56,78,0]]) {
+  curbs.push([x,.14,z,length,.30,.36,yaw]);
+  for (const height of [.42,.86,1.24]) rails.push([x,height,z,length,.075,.07,yaw]);
+  for (let offset=-length/2; offset<=length/2; offset+=6) {
+   rails.push([x+offset*Math.cos(yaw),.72,z-offset*Math.sin(yaw),.095,1.43,.11,yaw]);
+  }
+ }
+
+ const footings = [];
+ for (const x of [-16,-6,4,14]) footings.push([x,-.003,-40,2.67,.006,6.22,0]);
+ for (const [x,z] of [[-14,-38],[18,-38],[-23,-53],[13,-53]]) {
+  footings.push([x,-.003,z,1.58,.006,2.02,0]);
+ }
+
+ const block = new THREE.BoxGeometry(1,1,1);
+ const transform = new THREE.Object3D();
+ const addBatch = (name,parts,finish) => {
+  const mesh = new THREE.InstancedMesh(block,finish,parts.length);
+  mesh.name = name;
+  mesh.receiveShadow = true;
+  for (const [index,[x,y,z,w,h,d,yaw]] of parts.entries()) {
+   transform.position.set(x,y,z);
+   transform.scale.set(w,h,d);
+   transform.rotation.y = yaw;
+   transform.updateMatrix();
+   mesh.setMatrixAt(index,transform.matrix);
+  }
+  mesh.computeBoundingSphere();
+  scene.add(mesh);
+ };
+ addBatch('Yard perimeter curbs',curbs,mat(0x6b6255));
+ addBatch('Yard perimeter rails',rails,mat(0x52605c,.30));
+ addBatch('Far yard foundations',footings,mat(0x47413a));
+}
+
 function buildFreightYard() {
  const sky = new THREE.Color(0x929d9d);
  scene.background = sky;
@@ -109,7 +181,7 @@ function buildFreightYard() {
  const asphalt = new THREE.MeshStandardMaterial({
   color:0x8c8c83, map:surface('#343d3e'), roughness:.84, metalness:.05
  });
- applyYardMaterial(asphalt, 'asphalt_01', 26, 0xeee9e1, .68);
+ const asphaltReady = applyYardMaterial(asphalt, 'asphalt_01', 26, 0xeee9e1, .68);
  const tar = mat(0x212a2b);
  const paint = mat(0x937447);
  const beam = mat(0x344347, .61);
@@ -119,6 +191,7 @@ function buildFreightYard() {
  const ribs = containerColors.map(color => mat(new THREE.Color(color).multiplyScalar(.76), .36));
 
  box(0,-.19,0,68,.38,68,asphalt);
+ buildYardPerimeter(asphalt,asphaltReady);
  for (let x=-30; x<=30; x+=5) box(x,.004,0,.035,.006,63,tar);
  for (let z=-30; z<=30; z+=6) box(0,.007,z,63,.006,.042,tar);
  buildYardWear();
