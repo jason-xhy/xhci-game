@@ -221,10 +221,59 @@ function buildFreightYard() {
    color:0xffdfa3, emissive:0xffb766, emissiveIntensity:2.5
   }));
  }
- box(0,2,-27,9,4,3,beam,true);
- for(let x=-3.85;x<4;x+=.55)box(x,2,-25.47,.08,3.4,.1,joints);
+ const cladding = new THREE.MeshStandardMaterial({
+  color:0xa5b6b3, map:steel.map, roughness:.76, metalness:.22
+ });
+ const cabinet = mat(0x657479, .46);
+ const frame = mat(0x2b3637, .54);
+ const pipe = mat(0x7c837e, .68);
+ const guard = mat(0xac7940, .32);
+
+ // The original shell is also the sole collider. Keep all low details
+ // inside its collision clearance on the approach side at z = -25.18.
+ box(0,2,-27,9,4,3,cladding,true);
+ box(0,.18,-27,9.22,.36,3.23,joints);
+ box(0,4.04,-27,9.36,.17,3.34,frame);
+ for (const x of [-4.35,-2.12,.69,4.35]) {
+  box(x,2.06,-25.46,.13,3.73,.13,frame);
+ }
+ box(0,3.04,-25.43,8.63,.13,.13,frame);
+ box(0,3.38,-25.39,3.91,.97,.16,frame);
  sign('HOST CONTROLLER / BAY 04',0,3.38,-25.29,'#c9c9b6',3.8);
- for (const dx of [-1.67,1.67]) box(dx,3.39,-25.39,.07,.76,.06,joints);
+
+ // The tall cable riser is on the west end. The short silver exhaust
+ // bank gives the east end a distinct profile when crossing the aisle.
+ box(-3.52,4.63,-27.36,1.65,2.18,1.52,guard);
+ box(-3.52,5.76,-27.36,1.84,.16,1.74,frame);
+ box(-3.52,4.66,-26.56,1.22,1.59,.13,cabinet);
+ box(-3.52,4.28,-26.47,.82,.09,.15,frame);
+ for (const x of [-3.95,-3.09]) {
+  box(x,2.98,-25.36,.075,5.35,.08,pipe);
+  for (const y of [.66,2.48,4.05]) box(x,y,-25.43,.19,.12,.18,frame);
+ }
+ for(let y=.54;y<5.65;y+=.29)box(-3.52,y,-25.36,.88,.036,.067,pipe);
+ box(-3.52,5.59,-25.86,.93,.09,1.03,frame);
+
+ for (const x of [2.24,3.38]) {
+  box(x,4.40,-27.35,.69,.67,1.07,cabinet);
+  box(x,4.77,-27.35,.91,.15,1.21,pipe);
+  box(x,4.52,-26.79,.62,.25,.09,frame);
+ }
+ box(2.81,1.87,-25.405,2.59,1.43,.15,frame);
+ for(let i=0;i<10;i++) {
+  const fin=box(2.81,1.31+i*.123,-25.31,2.38,.064,.121,pipe);
+  fin.rotation.x=-.30;
+ }
+ for (const x of [1.57,4.05]) box(x,1.87,-25.29,.085,1.4,.110,cabinet);
+
+ box(-.71,1.35,-25.407,1.44,2.43,.15,frame);
+ box(-.71,1.36,-25.318,1.30,2.27,.09,cabinet);
+ box(-.24,1.25,-25.247,.069,.26,.098,pipe);
+ for (const y of [.55,2.13]) box(-1.36,y,-25.26,.077,.19,.08,frame);
+ for (const y of [.43,.66,.89]) {
+  box(2.79,y,-25.38,2.83,.081,.12,pipe);
+  for (const x of [1.48,2.75,4.02]) box(x,y,-25.29,.11,.13,.11,frame);
+ }
  // Low hard stops along the container frontage establish scale without blocking the aisle.
  for (const x of [-6.35,5.4]) {
   box(x,.19,-25.01,.42,.38,1.18,joints);
