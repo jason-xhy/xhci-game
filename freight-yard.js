@@ -14,12 +14,12 @@ function buildFreightYard() {
  scene.fog = new THREE.FogExp2(sky, .012);
  sun.position.set(-26, 19, -38);
  sun.color.set(0xffc990);
- sun.intensity = 2.6;
+ sun.intensity = 2.15;
  const asphalt = new THREE.MeshStandardMaterial({
   color:0x8c8c83, map:surface('#343d3e'), roughness:.84, metalness:.05
  });
  const wet = new THREE.MeshStandardMaterial({
-  color:0x374548, roughness:.32, metalness:.4
+  color:0x262e2b, roughness:.72, metalness:.04
  });
  const tar = mat(0x212a2b);
  const paint = mat(0x937447);
@@ -36,6 +36,7 @@ function buildFreightYard() {
   const x=(n*13%49)-24, z=(n*17%57)-28;
   const puddle = new THREE.Mesh(new THREE.CircleGeometry(1, 15), wet);
   puddle.rotation.x=-Math.PI/2;
+  puddle.receiveShadow = true;
   puddle.position.set(x,.011+n*.00003,z);
   puddle.scale.set(.45+(n%4)*.35,.35+(n%5)*.44,1);
   scene.add(puddle);

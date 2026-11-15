@@ -20,7 +20,8 @@
  const challenges = [
   ['Enable Slot 已在 Command Ring。xHC 尚未收到通知。', ['写 Doorbell 0', '直接读完成事件', '写 EP0 门铃'], 0, 'Doorbell 0 通知 xHC 取命令。EP0 门铃用于控制传输。'],
   ['IRQ 已到达，随后要准备设备上下文。你现在先做什么？', ['猜一个 Slot ID', '读 Command Completion，取得 Slot ID，并推进 ERDP', '提交 SET_CONFIGURATION'], 1, '驱动从完成事件取得 Slot ID，后续才能按该 ID 准备上下文。'],
-  ['已分配地址。你要读取描述符来确定端点配置，走哪条路径？', ['Command Ring → Doorbell 0', '直接读取 Event Ring', 'EP0 Transfer Ring → slot/EP0 门铃 → Transfer Event'], 2, 'GET_DESCRIPTOR 是 EP0 控制传输；端点配置完成后，再经 EP0 发送 SET_CONFIGURATION。']
+  ['已分配地址。你要读取描述符来确定端点配置，走哪条路径？', ['Command Ring → Doorbell 0', '直接读取 Event Ring', 'EP0 Transfer Ring → slot/EP0 门铃 → Transfer Event'], 2, 'GET_DESCRIPTOR 是 EP0 控制传输；端点配置完成后，再经 EP0 发送 SET_CONFIGURATION。'],
+  ['刚才 EP0 的消费指针不动，DEQ 处 C=0、CCS=1，Event Ring 也没出现新事件。哪一步能恢复？', ['推进 Event Ring 的 ERDP', '选中 Transfer Ring 的 DEQ 条目，发布 C=CCS 后重写 EP0 门铃', '把下一条 TRB 的 Cycle 翻转'], 1, 'xHC 在尚未交给它的 TRB 前停住。修复消费头后，它才能继续处理控制 TD 并产生 Transfer Event。']
  ];
  document.addEventListener('keydown', event => {
   if (!root.offsetParent || event.repeat || event.target.matches?.('input, textarea, select, [contenteditable]')) return;
@@ -101,7 +102,7 @@
    status.textContent = '';
    keys.hidden = !question;
    [...route.children].forEach((node,i) => {
-    node.toggleAttribute('data-current', i === [1,2,4][index]);
+    node.toggleAttribute('data-current', i === [1,2,4,4][index]);
     node.toggleAttribute('data-done', index === challenges.length);
    });
    if (!question) {

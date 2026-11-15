@@ -149,3 +149,30 @@
 #journey-status{min-height:2.8em}
 #mission-arc{margin-top:8px;color:#f0c88b;font:11px monospace}
 @media(max-width:600px){.journey-track{grid-template-columns:repeat(2,minmax(0,1fr))}}
+#overlay .card{width:min(680px,calc(100% - 28px));padding:clamp(16px,4vw,38px)}
+#overlay h1{font-size:clamp(2.25rem,8vw,4.2rem);margin:8px 0}
+#overlay h3{margin:0 0 8px}
+#overlay p{margin:8px 0}
+#overlay .intro{max-width:42ch}
+.start-controls{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.start-controls button{white-space:normal;letter-spacing:.08em;padding:10px 12px}
+.start-controls .secondary-start{background:#203234;border:1px solid #526d69;color:#e5d7bb}
+body:has(#overlay:not([style*="display: none"])) #chapter-labs > button,
+#overlay .journey-controls button{background:#203234;border:1px solid #526d69;color:#e5d7bb}
+#overlay .journey-controls button:hover,#overlay .journey-controls button:focus-visible{border-color:#eab669}
+#overlay{backdrop-filter:blur(2px)}
+#controller-status:not(:empty){padding:6px 8px;margin-bottom:6px;border-left:3px solid #e6ad58;background:#302619;color:#ffe0a1}
+#controller-status.submitted{border-color:#72d9e9;background:#143033;color:#acedf4}
+#controller-status.returning,#controller-status.ready{border-color:#a0f3a4;background:#193121;color:#bcf4c6}
+#controller-status.stalled{border-color:#ff744e;background:#38241d;color:#ffd1c3}
+#inspect-controls button{padding:6px 8px;letter-spacing:normal;margin:2px}
+#log{max-height:82px;scrollbar-width:thin;padding-bottom:4px}
+@media(max-width:600px){
+ #overlay .card{max-height:calc(100dvh - 24px)}
+ #overlay .journey-track{grid-template-columns:repeat(3,minmax(0,1fr))}
+ #overlay .journey-track li{padding:5px;font-size:.72rem}
+}
+.trb-selected{outline:1px solid #8ab1a8;outline-offset:1px}
+@media(max-width:600px){
+ body:has(#overlay:not([style*="display: none"])) #toggle-labs[aria-expanded="false"]{display:none}
+}
